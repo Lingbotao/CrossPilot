@@ -1,6 +1,7 @@
 /** 认证相关接口（与后端 ``/api/v1/auth/*`` 对应）。 */
 
 import { api } from './client';
+import { tokenStore } from './tokenStore';
 import type { LoginRequest, LoginResponse, MeResponse, RefreshResponse } from './types';
 
 export const authApi = {
@@ -10,7 +11,12 @@ export const authApi = {
   refresh: (refreshToken: string) =>
     api.post<RefreshResponse>('/auth/refresh', { refresh_token: refreshToken }, { skipAuthRefresh: true }),
 
-  logout: () => api.post<{ status: string }>('/auth/logout'),
+  logout: () =>
+    api.post<{ status: string }>(
+      '/auth/logout',
+      { refresh_token: tokenStore.getRefreshToken() },
+      { skipAuthRefresh: true },
+    ),
 
   me: () => api.get<MeResponse>('/auth/me'),
 };

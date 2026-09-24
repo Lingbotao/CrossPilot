@@ -46,6 +46,12 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """登出时带上 Refresh，才能立刻作废 7 天有效的续期令牌（A-02）。"""
+
+    refresh_token: str | None = None
+
+
 class RefreshResponse(BaseModel):
     access_token: str
     refresh_token: str

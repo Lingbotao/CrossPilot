@@ -15,6 +15,7 @@ CI 与 `docker compose up` 之后用 ``make test-security`` 跑。
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -158,8 +159,9 @@ class TestLoginMembershipFunction:
         """登录用的 SECURITY DEFINER 函数只能返回该用户自己的成员关系。"""
 
         async def _scenario() -> list[int]:
-            engine, factory = _app_session()
-            async with factory() as session:
+            owner_engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            owner_factory = async_sessionmaker(owner_engine, expire_on_commit=False)
+            async with owner_factory() as session:
                 await session.execute(
                     text(
                         "INSERT INTO sys_user (id, email, password_hash, status) "
@@ -175,6 +177,10 @@ class TestLoginMembershipFunction:
                     {"id": USER_A + 1, "t": TENANT_A, "u": USER_A},
                 )
                 await session.commit()
+            await owner_engine.dispose()
+
+            engine, factory = _app_session()
+            async with factory() as session:
                 rows = (
                     (await session.execute(text("SELECT tenant_id FROM app_user_tenants(:u)"), {"u": USER_A}))
                     .scalars()
@@ -228,3 +234,69 @@ class TestLoginLogNullTenantRow:
             return int(count)
 
         assert _run(_scenario()) == 0
+
+    def test_app_role_can_insert_unattributed_login_log(self, migrated: None) -> None:
+        """★ D1：运行时角色必须能写入 tenant_id 为空的失败登录，且租户仍看不见。"""
+
+        row_id = 900000000000000000 + time.time_ns() % 10**12
+
+        async def _insert_as_app() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO login_log (id, tenant_id, email, result, fail_reason) "
+                        "VALUES (:id, NULL, 'fail-login@example.com', 2, 'bad_password')"
+                    ),
+                    {"id": row_id},
+                )
+                await session.commit()
+            await engine.dispose()
+
+        async def _tenant_can_see() -> int:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                count = (
+                    await session.execute(text("SELECT count(*) FROM login_log WHERE id = :id"), {"id": row_id})
+                ).scalar_one()
+            await engine.dispose()
+            return int(count)
+
+        async def _owner_can_see() -> int:
+            owner_engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            owner_factory = async_sessionmaker(owner_engine, expire_on_commit=False)
+            async with owner_factory() as session:
+                count = (
+                    await session.execute(text("SELECT count(*) FROM login_log WHERE id = :id"), {"id": row_id})
+                ).scalar_one()
+            await owner_engine.dispose()
+            return int(count)
+
+        _run(_insert_as_app())
+        assert _run(_tenant_can_see()) == 0
+        assert _run(_owner_can_see()) == 1
+
+    def test_app_role_insert_returning_null_tenant_login_log(self, migrated: None) -> None:
+        """ORM 路径是 INSERT ... RETURNING，SELECT 策略必须放行未绑定 + NULL 行。"""
+
+        row_id = 910000000000000000 + time.time_ns() % 10**12
+
+        async def _insert_returning() -> int:
+            engine, factory = _app_session()
+            async with factory() as session:
+                returned = (
+                    await session.execute(
+                        text(
+                            "INSERT INTO login_log (id, tenant_id, email, result, fail_reason) "
+                            "VALUES (:id, NULL, 'returning@example.com', 2, 'user_not_found') "
+                            "RETURNING id"
+                        ),
+                        {"id": row_id},
+                    )
+                ).scalar_one()
+                await session.commit()
+            await engine.dispose()
+            return int(returned)
+
+        assert _run(_insert_returning()) == row_id

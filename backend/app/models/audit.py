@@ -100,9 +100,9 @@ class LoginLog(Base, PKMixin):
     由此带来两个必须知道的后果：
     1. **ORM 不会自动注入租户过滤**，``LoginLogRepository`` 的所有查询
        必须显式带 ``tenant_id`` 条件（这是全项目唯一的例外，已在此说明）；
-    2. **RLS 策略仍然生效**：策略比较 ``tenant_id = <当前租户>``，
-       而 NULL 与任何值比较都为 false —— 所以"未归属租户"的尝试
-       对所有租户管理员都不可见，只有平台侧能看。这正是我们要的效果。
+    2. **RLS 策略仍然生效**（0002 起拆开）：绑定租户后只能看见本租户行；
+       未绑定且 ``tenant_id IS NULL`` 时允许 SELECT（ORM ``INSERT ... RETURNING``
+       必须过 SELECT，否则失败登录仍 500）。INSERT 允许 ``tenant_id IS NULL``。
     """
 
     __tablename__ = "login_log"

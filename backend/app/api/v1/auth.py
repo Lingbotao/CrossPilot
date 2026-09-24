@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentIdentity
@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
     MeResponse,
     RefreshRequest,
     RefreshResponse,
@@ -54,19 +55,20 @@ async def refresh_token(
 async def logout(
     request: Request,
     identity: CurrentIdentity,
+    payload: LogoutRequest = Body(default_factory=LogoutRequest),
     session: AsyncSession = DbDep,
 ) -> ApiResponse[dict[str, str]]:
-    """登出。
+    """登出：把当前 Access / Refresh 的 jti 写入黑名单（A-02），并记审计。
 
-    说明：Access Token 是自包含签名的，服务端不做状态存储 ——
-    真正的失效靠"Access 15 分钟自然过期 + Refresh 不再可用"。
-    这里记录审计，并由前端清理本地令牌。
+    前端必须把 Refresh Token 一并送来，否则 7 天续期令牌仍能换新 Access。
     """
     await AuthService(session).logout(
-        identity.user.id,
-        int(identity.tenant.id),
-        client_ip(request),
-        client_ua(request),
+        user_id=identity.user.id,
+        tenant_id=int(identity.tenant.id),
+        access_payload=identity.payload,
+        refresh_token=payload.refresh_token,
+        ip=client_ip(request),
+        ua=client_ua(request),
     )
     return ok({"status": "logged_out"}, message="已登出")
 

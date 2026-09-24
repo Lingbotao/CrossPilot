@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import NoReturn
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,7 @@ from app.core.permissions import (
     role_can_view_cost,
 )
 from app.core.security import TokenPayload, create_token_pair, decode_token, verify_password
+from app.core.token_blacklist import assert_token_not_revoked, revoke_payload
 from app.db.session import apply_rls_tenant
 from app.models.audit import LoginLog
 from app.models.enums import AuditAction, LoginResult, TenantStatus, TenantUserStatus, UserStatus
@@ -76,28 +78,35 @@ class AuthService:
 
         # ---- ① 用户校验（不区分失败原因） ----
         if user is None:
-            await self._log_login(None, email, LoginResult.FAILURE, ip, ua, "user_not_found")
-            raise UnauthenticatedError(_GENERIC_AUTH_FAILURE)
+            await self._reject_login(UnauthenticatedError(_GENERIC_AUTH_FAILURE), None, email, ip, ua, "user_not_found")
 
         if SysUserRepository.is_locked(user):
-            await self._log_login(None, email, LoginResult.FAILURE, ip, ua, "account_locked", user_id=user.id)
-            raise AccountLockedError()
+            await self._reject_login(AccountLockedError(), None, email, ip, ua, "account_locked", user_id=user.id)
 
         if int(user.status) != int(UserStatus.ACTIVE):
-            await self._log_login(None, email, LoginResult.FAILURE, ip, ua, "user_disabled", user_id=user.id)
-            raise UnauthenticatedError(_GENERIC_AUTH_FAILURE)
+            await self._reject_login(
+                UnauthenticatedError(_GENERIC_AUTH_FAILURE), None, email, ip, ua, "user_disabled", user_id=user.id
+            )
 
         if not verify_password(payload.password, user.password_hash):
             await self.users.record_login_failure(user)
-            await self._log_login(None, email, LoginResult.FAILURE, ip, ua, "bad_password", user_id=user.id)
-            raise UnauthenticatedError(_GENERIC_AUTH_FAILURE)
+            await self._reject_login(
+                UnauthenticatedError(_GENERIC_AUTH_FAILURE), None, email, ip, ua, "bad_password", user_id=user.id
+            )
 
         # ---- ② 解析租户成员关系（SECURITY DEFINER，无租户上下文） ----
         memberships = await self.members.list_user_tenants_cross_tenant(user.id)
         active = [m for m in memberships if int(m.status) == int(TenantUserStatus.ACTIVE)]
         if not active:
-            await self._log_login(None, email, LoginResult.FAILURE, ip, ua, "no_active_tenant", user_id=user.id)
-            raise UnauthenticatedError("该账号未加入任何可用租户")
+            await self._reject_login(
+                UnauthenticatedError("该账号未加入任何可用租户"),
+                None,
+                email,
+                ip,
+                ua,
+                "no_active_tenant",
+                user_id=user.id,
+            )
 
         chosen = self._pick_tenant(active, payload.tenant_code)
 
@@ -137,6 +146,7 @@ class AuthService:
     # ------------------------------------------------------------------ 刷新
     async def refresh(self, refresh_token: str) -> RefreshResponse:
         payload: TokenPayload = decode_token(refresh_token, expected_type="refresh")
+        await assert_token_not_revoked(payload)
         if payload.tid is None:
             raise UnauthenticatedError("令牌缺少租户信息")
 
@@ -148,6 +158,8 @@ class AuthService:
         user = await self.users.get(payload.sub)
         if user is None or int(user.status) != int(UserStatus.ACTIVE):
             raise UnauthenticatedError("账号不可用")
+        if SysUserRepository.is_locked(user):
+            raise AccountLockedError()
 
         # Refresh 时重新校验成员关系 —— 被移除的成员不能靠旧 refresh token 续命
         membership = await self._require_membership(user.id, payload.tid)
@@ -159,6 +171,8 @@ class AuthService:
             if issued_at < user.password_changed_at:
                 raise UnauthenticatedError("密码已变更，请重新登录")
 
+        # 轮换：先作废旧 Refresh，再签发新对。前端续期已单飞，不会并发互踩。
+        await revoke_payload(payload)
         pair = create_token_pair(user.id, payload.tid, membership.role_code)
         return RefreshResponse(
             access_token=pair.access_token,
@@ -187,7 +201,27 @@ class AuthService:
             data_scope=scopes,
         )
 
-    async def logout(self, user_id: int, tenant_id: int, ip: str | None, ua: str | None) -> None:
+    async def logout(
+        self,
+        *,
+        user_id: int,
+        tenant_id: int,
+        access_payload: TokenPayload,
+        refresh_token: str | None,
+        ip: str | None,
+        ua: str | None,
+    ) -> None:
+        """登出：把当前 Access / Refresh 的 jti 写入黑名单（A-02），并记审计。"""
+        await revoke_payload(access_payload)
+        if refresh_token:
+            try:
+                refresh_payload = decode_token(refresh_token, expected_type="refresh")
+                await assert_token_not_revoked(refresh_payload)
+                await revoke_payload(refresh_payload)
+            except UnauthenticatedError:
+                # Refresh 已失效或不匹配 —— 仍要让 Access 失效，不把登出变成 401
+                log.info("logout_refresh_already_invalid", user_id=user_id)
+
         await self.audit.append_action(
             tenant_id=tenant_id,
             action=AuditAction.LOGOUT,
@@ -199,6 +233,25 @@ class AuthService:
         )
 
     # ------------------------------------------------------------------ 内部
+    async def _reject_login(
+        self,
+        error: UnauthenticatedError | AccountLockedError,
+        tenant_id: int | None,
+        email: str,
+        ip: str | None,
+        ua: str | None,
+        fail_reason: str,
+        user_id: int | None = None,
+    ) -> NoReturn:
+        """失败登录必须先落库再抛错。
+
+        ``get_db`` 在异常时会 rollback。若不先 ``commit``，锁定计数和
+        ``login_log`` 都会被 401 一起卷走，A-01 的锁定形同虚设。
+        """
+        await self._log_login(tenant_id, email, LoginResult.FAILURE, ip, ua, fail_reason, user_id=user_id)
+        await self.session.commit()
+        raise error
+
     @staticmethod
     def _pick_tenant(memberships: list[TenantMembership], tenant_code: str | None) -> TenantMembership:
         if tenant_code:

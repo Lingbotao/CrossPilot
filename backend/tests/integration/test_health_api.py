@@ -101,7 +101,12 @@ class TestOpenApi:
     def test_schema_is_served(self, client: TestClient) -> None:
         schema = client.get("/openapi.json").json()
         assert schema["info"]["title"] == "CrossPilot API"
-        for route in ("/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/tenants/current"):
+        for route in (
+            "/api/v1/auth/login",
+            "/api/v1/auth/refresh",
+            "/api/v1/auth/logout",
+            "/api/v1/tenants/current",
+        ):
             assert route in schema["paths"], f"{route} 未出现在 OpenAPI 契约中"
 
     def test_root_redirects_to_docs(self, client: TestClient) -> None:

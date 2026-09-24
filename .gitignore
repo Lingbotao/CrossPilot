@@ -41,6 +41,7 @@ secrets/
 *~
 *.swp
 *.swo
+.cursor/
 
 # ---- AI Agent 工作区 ----
 # .workbuddy/memory/ 是逐日会话日志，每次对话都会变，入库只会制造无意义冲突。

@@ -3,7 +3,8 @@
 设计要点：
 - 密码用 **bcrypt**，但先做 SHA-256 预哈希 —— bcrypt 只取前 72 字节，超长密码会被静默截断。
   预哈希后固定 44 字节，既不截断也不会被"密码长度"探测。
-- 双 Token：Access 15min（不落库，靠签名）、Refresh 7d（带 jti，登出时进黑名单）。
+- 双 Token：Access 15min（不落库，靠签名）、Refresh 7d（带 jti）。
+  登出与 Refresh 轮换把 ``jti`` 写入 ``app.core.token_blacklist``（内存 + Redis）。
 - Token 里带 ``tid``（tenant_id）—— 租户上下文从令牌恢复，不从请求参数取，
   否则攻击者改个 query 参数就能换租户。
 """

@@ -20,10 +20,16 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import set_role_code, set_tenant_id, set_user_id
-from app.core.errors import PermissionDeniedError, TenantDisabledError, UnauthenticatedError
+from app.core.errors import (
+    AccountLockedError,
+    PermissionDeniedError,
+    TenantDisabledError,
+    UnauthenticatedError,
+)
 from app.core.logging import get_logger
 from app.core.permissions import Perm, permissions_for_role, role_can_view_cost
 from app.core.security import TokenPayload, decode_token
+from app.core.token_blacklist import assert_token_not_revoked
 from app.db.session import apply_rls_tenant, get_db
 from app.models.enums import TenantStatus, TenantUserStatus, UserStatus
 from app.models.tenant import SysUser, Tenant, TenantUser
@@ -72,6 +78,7 @@ async def get_identity(
         raise UnauthenticatedError()
 
     payload = decode_token(credentials.credentials, expected_type="access")
+    await assert_token_not_revoked(payload)
     if payload.tid is None:
         raise UnauthenticatedError("令牌缺少租户信息")
 
@@ -97,6 +104,8 @@ async def get_identity(
     user = await SysUserRepository(session).get(payload.sub)
     if user is None or int(user.status) != int(UserStatus.ACTIVE):
         raise UnauthenticatedError("账号不可用")
+    if SysUserRepository.is_locked(user):
+        raise AccountLockedError()
 
     # 角色可能在令牌签发后被管理员改过 —— 以数据库当前值为准，不用令牌里的旧值
     if membership.role_code != payload.role:
