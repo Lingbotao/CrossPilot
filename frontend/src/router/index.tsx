@@ -5,13 +5,16 @@
  * 避免出现"菜单里有、路由没配"（点进去 404）或反过来的情况。
  */
 
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter } from 'react-router-dom';
 
 import { AppLayout } from '@/components/AppLayout';
-import { DashboardPage } from '@/pages/DashboardPage';
+import { AcceptInvitationPage } from '@/pages/AcceptInvitationPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
+import { RegisterPage } from '@/pages/RegisterPage';
+import { VerifyEmailPage } from '@/pages/VerifyEmailPage';
+import { DefaultAuthorizedRoute } from '@/router/DefaultAuthorizedRoute';
 import { RequireAuth, RequireGuest, RequirePermission } from '@/router/guards';
 import { MENU_ITEMS } from '@/router/menu';
 
@@ -25,6 +28,16 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: '/register',
+    element: (
+      <RequireGuest>
+        <RegisterPage />
+      </RequireGuest>
+    ),
+  },
+  { path: '/verify-email', element: <VerifyEmailPage /> },
+  { path: '/invite/accept', element: <AcceptInvitationPage /> },
+  {
     path: '/',
     element: (
       <RequireAuth>
@@ -32,25 +45,18 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
-      {
-        path: 'dashboard',
-        element: (
-          <RequirePermission permission={MENU_ITEMS[0]!.permission}>
-            <DashboardPage />
-          </RequirePermission>
-        ),
-      },
-      // 已铺菜单但功能未交付的模块：走统一占位页，明确标注交付里程碑。
-      // 里程碑交付后，只需把这里换成真实页面组件，菜单与权限守卫无需改动。
-      ...MENU_ITEMS.slice(1).map((item) => ({
-        path: item.path.replace(/^\//, ''),
-        element: (
-          <RequirePermission permission={item.permission}>
-            <PlaceholderPage />
-          </RequirePermission>
-        ),
-      })),
+      { index: true, element: <DefaultAuthorizedRoute /> },
+      ...MENU_ITEMS.map((item) => {
+        const Page = item.component ?? PlaceholderPage;
+        return {
+          path: item.path.replace(/^\//, ''),
+          element: (
+            <RequirePermission permission={item.permission}>
+              <Page />
+            </RequirePermission>
+          ),
+        };
+      }),
       { path: '*', element: <NotFoundPage /> },
     ],
   },

@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 
 from app.core.config import settings
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.models.audit import AuditLog, LoginLog
-from app.models.enums import TenantUserStatus
+from app.models.enums import InvitationStatus, TenantUserStatus
 from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
 from app.repositories.base import BaseRepository
 
@@ -30,6 +30,19 @@ class TenantMembership:
     status: int
 
 
+@dataclass(frozen=True, slots=True)
+class RegisteredIdentity:
+    tenant_id: int
+    user_id: int
+    membership_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class MemberRecord:
+    membership: TenantUser
+    user: SysUser
+
+
 class TenantRepository(BaseRepository[Tenant]):
     """租户表本身不带 tenant_id，故不受 ORM 自动过滤影响（这是隔离的根）。"""
 
@@ -37,6 +50,43 @@ class TenantRepository(BaseRepository[Tenant]):
 
     async def get_by_code(self, code: str) -> Tenant | None:
         return await self.get_by(code=code)
+
+    async def register(
+        self,
+        *,
+        tenant_id: int,
+        user_id: int,
+        membership_id: int,
+        email: str,
+        password_hash: str,
+        display_name: str | None,
+        tenant_code: str,
+        tenant_name: str,
+        default_currency: str,
+        timezone: str,
+    ) -> RegisteredIdentity:
+        row = (
+            await self.session.execute(
+                text(
+                    "SELECT tenant_id, user_id, membership_id FROM app_register_tenant("
+                    ":tenant_id, :user_id, :membership_id, :email, :password_hash, "
+                    ":display_name, :tenant_code, :tenant_name, :currency, :timezone)"
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "membership_id": membership_id,
+                    "email": email,
+                    "password_hash": password_hash,
+                    "display_name": display_name,
+                    "tenant_code": tenant_code,
+                    "tenant_name": tenant_name,
+                    "currency": default_currency,
+                    "timezone": timezone,
+                },
+            )
+        ).one()
+        return RegisteredIdentity(int(row.tenant_id), int(row.user_id), int(row.membership_id))
 
 
 class SysUserRepository(BaseRepository[SysUser]):
@@ -46,6 +96,11 @@ class SysUserRepository(BaseRepository[SysUser]):
 
     async def get_by_email(self, email: str) -> SysUser | None:
         return await self.get_by(email=email.lower().strip())
+
+    async def mark_email_verified(self, user: SysUser) -> SysUser:
+        if user.email_verified_at is None:
+            await self.update(user, email_verified_at=datetime.now(UTC))
+        return user
 
     async def record_login_failure(self, user: SysUser) -> None:
         """累加失败次数，达阈值即锁定（PRD F1-01）。"""
@@ -122,6 +177,24 @@ class TenantUserRepository(BaseRepository[TenantUser]):
         )
         return len(list((await self.session.execute(stmt)).scalars().all()))
 
+    async def list_members(self, *, offset: int, limit: int) -> tuple[list[MemberRecord], int]:
+        conditions = (TenantUser.deleted_at.is_(None),)
+        total_stmt = select(func.count()).select_from(TenantUser).where(*conditions)
+        total = int((await self.session.execute(total_stmt)).scalar_one())
+        stmt = (
+            select(TenantUser, SysUser)
+            .join(SysUser, SysUser.id == TenantUser.user_id)
+            .where(*conditions)
+            .order_by(TenantUser.created_at.asc())
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [MemberRecord(membership=row[0], user=row[1]) for row in rows], total
+
+    async def get_by_user_id(self, user_id: int) -> TenantUser | None:
+        return await self.get_by(user_id=user_id)
+
 
 class RoleRepository(BaseRepository[Role]):
     model = Role
@@ -152,6 +225,21 @@ class UserDataScopeRepository(BaseRepository[UserDataScope]):
             for row in rows
         }
 
+    async def upsert(
+        self, *, tenant_user_id: int, resource_type: int, scope_type: int, shop_ids: list[int]
+    ) -> UserDataScope:
+        row = await self.get_by(tenant_user_id=tenant_user_id, resource_type=resource_type)
+        if row is None:
+            return await self.add(
+                UserDataScope(
+                    tenant_user_id=tenant_user_id,
+                    resource_type=resource_type,
+                    scope_type=scope_type,
+                    shop_ids=shop_ids,
+                )
+            )
+        return await self.update(row, scope_type=scope_type, shop_ids=shop_ids)
+
 
 class MemberInvitationRepository(BaseRepository[MemberInvitation]):
     model = MemberInvitation
@@ -162,24 +250,46 @@ class MemberInvitationRepository(BaseRepository[MemberInvitation]):
             .where(
                 MemberInvitation.token_hash == token_hash,
                 MemberInvitation.expires_at > datetime.now(UTC),
+                MemberInvitation.status == int(InvitationStatus.PENDING),
             )
             .limit(1)
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def list_pending(self) -> list[MemberInvitation]:
+        stmt = (
+            self.base_select()
+            .where(
+                MemberInvitation.status == int(InvitationStatus.PENDING),
+                MemberInvitation.expires_at > datetime.now(UTC),
+            )
+            .order_by(MemberInvitation.created_at.desc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def revoke_pending_for_email(self, email: str) -> int:
         """重发邀请时先作废旧的，避免一个邮箱同时有多个有效令牌。"""
+        from app.core.context import require_tenant_id
+
         stmt = (
             update(MemberInvitation)
             .where(
+                MemberInvitation.tenant_id == require_tenant_id(),
                 MemberInvitation.email == email.lower().strip(),
                 MemberInvitation.expires_at > datetime.now(UTC),
+                MemberInvitation.status == int(InvitationStatus.PENDING),
             )
-            .values(expires_at=datetime.now(UTC))
+            .values(expires_at=datetime.now(UTC), status=int(InvitationStatus.REVOKED))
         )
         result = await self.session.execute(stmt)
         # Core DML 返回的是 CursorResult（带 rowcount）；Result 泛型上没有该属性
         return int(getattr(result, "rowcount", 0) or 0)
+
+    async def set_status(self, invitation: MemberInvitation, status: InvitationStatus) -> MemberInvitation:
+        values: dict[str, Any] = {"status": int(status)}
+        if status == InvitationStatus.ACCEPTED:
+            values["accepted_at"] = datetime.now(UTC)
+        return await self.update(invitation, **values)
 
 
 class LoginLogRepository(BaseRepository[LoginLog]):
@@ -260,9 +370,38 @@ class AuditLogRepository(BaseRepository[AuditLog]):
             raise NotFoundError("审计日志不存在")
         return obj
 
+    async def list_cursor(
+        self,
+        *,
+        limit: int,
+        before_id: int | None = None,
+        action: str | None = None,
+        user_id: int | None = None,
+        resource: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> list[AuditLog]:
+        stmt = self.base_select()
+        if before_id is not None:
+            stmt = stmt.where(AuditLog.id < before_id)
+        if action:
+            stmt = stmt.where(AuditLog.action == action)
+        if user_id is not None:
+            stmt = stmt.where(AuditLog.user_id == user_id)
+        if resource:
+            stmt = stmt.where(AuditLog.resource == resource)
+        if created_from:
+            stmt = stmt.where(AuditLog.created_at >= created_from)
+        if created_to:
+            stmt = stmt.where(AuditLog.created_at <= created_to)
+        stmt = stmt.order_by(AuditLog.id.desc()).limit(limit + 1)
+        return list((await self.session.execute(stmt)).scalars().all())
+
 
 __all__ = [
     "AuditLogRepository",
+    "MemberRecord",
+    "RegisteredIdentity",
     "LoginLogRepository",
     "MemberInvitationRepository",
     "RoleRepository",

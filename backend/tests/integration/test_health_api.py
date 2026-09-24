@@ -103,9 +103,14 @@ class TestOpenApi:
         assert schema["info"]["title"] == "CrossPilot API"
         for route in (
             "/api/v1/auth/login",
+            "/api/v1/auth/register",
+            "/api/v1/auth/verify-email",
             "/api/v1/auth/refresh",
             "/api/v1/auth/logout",
             "/api/v1/tenants/current",
+            "/api/v1/members",
+            "/api/v1/roles",
+            "/api/v1/audit-logs",
         ):
             assert route in schema["paths"], f"{route} 未出现在 OpenAPI 契约中"
 

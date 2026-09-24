@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.core.context import get_tenant_id
 from app.core.logging import get_logger
+from app.db import tenant_filter as _tenant_filter  # noqa: F401 - 注册 SQLAlchemy 事件监听器
 
 log = get_logger(__name__)
 

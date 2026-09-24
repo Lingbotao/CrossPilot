@@ -15,20 +15,22 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import set_role_code, set_tenant_id, set_user_id
 from app.core.errors import (
     AccountLockedError,
+    AppError,
+    ErrorCode,
     PermissionDeniedError,
     TenantDisabledError,
     UnauthenticatedError,
 )
 from app.core.logging import get_logger
 from app.core.permissions import Perm, permissions_for_role, role_can_view_cost
-from app.core.security import TokenPayload, decode_token
+from app.core.security import TokenPayload, consume_confirmation_token, decode_token
 from app.core.token_blacklist import assert_token_not_revoked
 from app.db.session import apply_rls_tenant, get_db
 from app.models.enums import TenantStatus, TenantUserStatus, UserStatus
@@ -144,6 +146,26 @@ def require_permission(*permissions: Perm) -> Callable[..., Coroutine[Any, Any, 
     return _dependency
 
 
+def require_confirmation(action: str) -> Callable[..., Coroutine[Any, Any, Identity]]:
+    """要求一次性二次确认令牌，且绑定当前用户、租户与动作。"""
+
+    async def _dependency(
+        identity: CurrentIdentity,
+        confirmation_token: Annotated[str | None, Header(alias="X-Confirmation-Token")] = None,
+    ) -> Identity:
+        if not confirmation_token:
+            raise AppError("该操作需要二次确认", code=ErrorCode.CONFIRMATION_REQUIRED)
+        await consume_confirmation_token(
+            confirmation_token,
+            action=action,
+            user_id=identity.user.id,
+            tenant_id=identity.tenant.id,
+        )
+        return identity
+
+    return _dependency
+
+
 async def require_cost_visibility(identity: CurrentIdentity) -> Identity:
     """★ F4 硬规则：成本价/利润数据的访问兜底。
 
@@ -168,5 +190,6 @@ __all__ = [
     "current_tenant_id",
     "get_identity",
     "require_cost_visibility",
+    "require_confirmation",
     "require_permission",
 ]

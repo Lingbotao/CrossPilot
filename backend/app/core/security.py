@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.errors import TokenExpiredError, UnauthenticatedError
 
 TokenType = Literal["access", "refresh"]
+PurposeType = Literal["email_verify", "member_invite", "confirmation"]
 
 _ALGO_BCRYPT_SHA256 = "bcrypt-sha256"
 
@@ -79,6 +80,19 @@ class TokenPayload(BaseModel):
     role: str | None = Field(default=None, description="角色码")
     typ: TokenType = Field(description="access | refresh")
     jti: str = Field(description="令牌唯一 ID，用于刷新轮换与登出黑名单")
+    iat: int
+    exp: int
+
+
+class PurposeTokenPayload(BaseModel):
+    """短期单用途令牌；不能作为 API 鉴权令牌使用。"""
+
+    sub: int
+    tid: int | None = None
+    purpose: PurposeType
+    action: str | None = None
+    email: str | None = None
+    jti: str
     iat: int
     exp: int
 
@@ -164,3 +178,72 @@ def decode_token(token: str, expected_type: TokenType = "access") -> TokenPayloa
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise UnauthenticatedError("令牌载荷不完整") from exc
+
+
+def create_purpose_token(
+    *,
+    user_id: int,
+    purpose: PurposeType,
+    ttl: timedelta,
+    tenant_id: int | None = None,
+    action: str | None = None,
+    email: str | None = None,
+) -> str:
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "tid": tenant_id,
+        "purpose": purpose,
+        "action": action,
+        "email": email,
+        "jti": uuid.uuid4().hex,
+        "iat": int(now.timestamp()),
+        "exp": int((now + ttl).timestamp()),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_alg)
+
+
+def decode_purpose_token(token: str, expected_purpose: PurposeType) -> PurposeTokenPayload:
+    try:
+        raw = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_alg])
+    except jwt.ExpiredSignatureError as exc:
+        raise TokenExpiredError() from exc
+    except jwt.PyJWTError as exc:
+        raise UnauthenticatedError("令牌无效") from exc
+    if raw.get("purpose") != expected_purpose:
+        raise UnauthenticatedError("令牌用途不匹配")
+    try:
+        return PurposeTokenPayload(
+            sub=int(raw["sub"]),
+            tid=int(raw["tid"]) if raw.get("tid") is not None else None,
+            purpose=raw["purpose"],
+            action=raw.get("action"),
+            email=raw.get("email"),
+            jti=str(raw["jti"]),
+            iat=int(raw["iat"]),
+            exp=int(raw["exp"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise UnauthenticatedError("令牌载荷不完整") from exc
+
+
+async def consume_confirmation_token(token: str, *, action: str, user_id: int, tenant_id: int) -> None:
+    """校验并一次性消费敏感操作确认令牌。"""
+    import time
+
+    from app.core.errors import AppError, ErrorCode
+    from app.core.token_blacklist import get_token_blacklist
+
+    try:
+        payload = decode_purpose_token(token, "confirmation")
+    except (TokenExpiredError, UnauthenticatedError) as exc:
+        raise AppError("确认令牌无效或已过期", code=ErrorCode.CONFIRMATION_INVALID) from exc
+    if (
+        payload.sub != user_id
+        or payload.tid != tenant_id
+        or payload.action != action
+        or await get_token_blacklist().is_revoked(payload.jti)
+    ):
+        raise AppError("确认令牌无效或已使用", code=ErrorCode.CONFIRMATION_INVALID)
+    ttl = max(1, payload.exp - int(time.time()))
+    await get_token_blacklist().revoke(payload.jti, ttl)

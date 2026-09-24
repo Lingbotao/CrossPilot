@@ -1,11 +1,12 @@
 /** 主框架：左侧菜单 + 顶部栏 + 内容区。 */
 
 import { LogoutOutlined, ShopOutlined, UserOutlined } from '@ant-design/icons';
-import { Avatar, Dropdown, Layout, Menu, Tag, Typography } from 'antd';
+import { Alert, Avatar, Dropdown, Layout, Menu, Tag, Typography } from 'antd';
 import { useMemo } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { usePermission } from '@/hooks/usePermission';
+import zhCN from '@/i18n/zh-CN';
 import { MENU_ITEMS } from '@/router/menu';
 import { useAuthStore } from '@/store/auth';
 
@@ -99,6 +100,14 @@ export function AppLayout() {
         </Header>
 
         <Content style={{ padding: 20, background: '#f5f6f8' }}>
+          {user && !user.email_verified_at ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={zhCN.auth.emailNotVerified}
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
           <Outlet />
         </Content>
       </Layout>

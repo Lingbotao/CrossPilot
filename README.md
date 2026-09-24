@@ -536,7 +536,8 @@ docker compose logs api | grep <trace_id>
 
 | 文档 | 用途 |
 |---|---|
-| [`docs/CrossPilot-PRD-SRS-v1.0.md`](docs/CrossPilot-PRD-SRS-v1.0.md) | **需求基线**（17 章）。冲突时以它为准 |
+| [`.cursor/skills/project-brief/`](.cursor/skills/project-brief/) | **新对话先读这个**（精简 briefing）。不要整本吞 PRD |
+| [`docs/CrossPilot-PRD-SRS-v1.0.md`](docs/CrossPilot-PRD-SRS-v1.0.md) | **需求基线**（17 章）。冲突时以它为准；按章按需打开 |
 | [`docs/CrossPilot-开发规划-v1.0.md`](docs/CrossPilot-开发规划-v1.0.md) | **执行计划**（v1.1 修订）。WBS / 人日 / 甘特 / 降级路径 / 上线前补做清单 |
 | [`docs/平台开发者资质申请指南.md`](docs/平台开发者资质申请指南.md) | 四平台资质要求对比、材料清单、提交顺序、踩坑清单 |
 | [`docs/CrossPilot-V2.0-功能候选清单.md`](docs/CrossPilot-V2.0-功能候选清单.md) | V2 候选功能（V1 明确不做） |

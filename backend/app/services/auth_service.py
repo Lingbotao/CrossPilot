@@ -13,11 +13,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import NoReturn
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.context import set_role_code, set_tenant_id, set_user_id
 from app.core.errors import AccountLockedError, TenantDisabledError, UnauthenticatedError
 from app.core.logging import get_logger
@@ -28,7 +29,13 @@ from app.core.permissions import (
     permissions_for_role,
     role_can_view_cost,
 )
-from app.core.security import TokenPayload, create_token_pair, decode_token, verify_password
+from app.core.security import (
+    TokenPayload,
+    create_purpose_token,
+    create_token_pair,
+    decode_token,
+    verify_password,
+)
 from app.core.token_blacklist import assert_token_not_revoked, revoke_payload
 from app.db.session import apply_rls_tenant
 from app.models.audit import LoginLog
@@ -45,6 +52,7 @@ from app.repositories.identity import (
     UserDataScopeRepository,
 )
 from app.schemas.auth import (
+    ConfirmPasswordResponse,
     CurrentUserResponse,
     LoginRequest,
     LoginResponse,
@@ -232,6 +240,21 @@ class AuthService:
             ua=ua,
         )
 
+    def confirm_password(self, user: SysUser, password: str, action: str, tenant_id: int) -> ConfirmPasswordResponse:
+        if not verify_password(password, user.password_hash):
+            raise UnauthenticatedError("密码错误")
+        token = create_purpose_token(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            purpose="confirmation",
+            action=action,
+            ttl=timedelta(minutes=settings.confirmation_ttl_minutes),
+        )
+        return ConfirmPasswordResponse(
+            confirmation_token=token,
+            expires_in=settings.confirmation_ttl_minutes * 60,
+        )
+
     # ------------------------------------------------------------------ 内部
     async def _reject_login(
         self,
@@ -323,6 +346,7 @@ def build_current_user(user: SysUser) -> CurrentUserResponse:
         display_name=user.display_name,
         avatar_url=user.avatar_url,
         last_login_at=user.last_login_at,
+        email_verified_at=user.email_verified_at,
     )
 
 

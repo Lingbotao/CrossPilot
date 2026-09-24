@@ -51,7 +51,7 @@ export function RequireGuest({ children }: { children: ReactNode }) {
     return <FullPageLoading />;
   }
   if (status === 'authenticated') {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/" replace />;
   }
   return <>{children}</>;
 }

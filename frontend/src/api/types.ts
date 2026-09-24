@@ -39,6 +39,8 @@ export const ErrorCode = {
   OPERATION_CONFLICT: 10003,
   TOO_MANY_REQUESTS: 10004,
   IDEMPOTENCY_CONFLICT: 10005,
+  CONFIRMATION_REQUIRED: 10006,
+  CONFIRMATION_INVALID: 10007,
   INTERNAL_ERROR: 10099,
 
   // 20xxx 认证与租户
@@ -48,6 +50,13 @@ export const ErrorCode = {
   ACCOUNT_LOCKED: 20004,
   CROSS_TENANT_DENIED: 20005,
   TOKEN_EXPIRED: 20006,
+  EMAIL_NOT_VERIFIED: 20007,
+  EMAIL_ALREADY_REGISTERED: 20008,
+  TENANT_CODE_TAKEN: 20009,
+  VERIFICATION_EXPIRED: 20010,
+  INVITATION_EXPIRED: 20011,
+  INVITATION_INVALID: 20012,
+  LAST_ADMIN_PROTECTED: 20013,
 
   // 30xxx 平台与同步
   PLATFORM_UNSUPPORTED: 30001,
@@ -171,6 +180,7 @@ export interface CurrentUser {
   display_name: string | null;
   avatar_url: string | null;
   last_login_at: string | null;
+  email_verified_at: string | null;
 }
 
 export interface TenantCurrent {
@@ -193,4 +203,157 @@ export interface TenantCurrent {
 export interface MeResponse {
   user: CurrentUser;
   tenant: TenantCurrent;
+}
+
+/** ---------- M1 认证、成员、角色与审计 ---------- */
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  tenant_code: string;
+  tenant_name: string;
+  display_name?: string;
+}
+
+export interface RegisterResponse {
+  tenant: TenantBrief;
+  verification_sent: boolean;
+}
+
+export interface VerifyEmailRequest {
+  token: string;
+}
+
+export interface ResendVerificationRequest {
+  email: string;
+}
+
+export interface ConfirmPasswordRequest {
+  password: string;
+  action: string;
+}
+
+export interface ConfirmPasswordResponse {
+  confirmation_token: string;
+  expires_in: number;
+}
+
+export const MemberStatus = {
+  INVITED: 1,
+  ACTIVE: 2,
+  DISABLED: 3,
+} as const;
+
+export type MemberStatusValue = (typeof MemberStatus)[keyof typeof MemberStatus];
+
+export const InvitationStatus = {
+  PENDING: 1,
+  ACCEPTED: 2,
+  EXPIRED: 3,
+  REVOKED: 4,
+} as const;
+
+export type InvitationStatusValue = (typeof InvitationStatus)[keyof typeof InvitationStatus];
+
+export const DataScopeType = {
+  ALL: 1,
+  SELECTED: 2,
+  NONE: 3,
+} as const;
+
+export type DataScopeTypeValue = (typeof DataScopeType)[keyof typeof DataScopeType];
+
+export const ResourceType = {
+  SHOP: 1,
+  WAREHOUSE: 2,
+  SUPPLIER: 3,
+} as const;
+
+export type ResourceTypeValue = (typeof ResourceType)[keyof typeof ResourceType];
+
+export interface DataScope {
+  scope_type: DataScopeTypeValue;
+  shop_ids: string[];
+}
+
+export interface Member {
+  id: string;
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  role_code: RoleCodeValue;
+  status: MemberStatusValue;
+  joined_at: string | null;
+  data_scope: Record<string, DataScope>;
+}
+
+export interface MemberInvitation {
+  id: string;
+  email: string;
+  role_code: RoleCodeValue;
+  expires_at: string;
+  status: InvitationStatusValue;
+}
+
+export interface MemberListResponse {
+  members: Member[];
+  invitations: MemberInvitation[];
+}
+
+export interface InviteMemberRequest {
+  email: string;
+  role_code: Exclude<RoleCodeValue, 'OWNER'>;
+}
+
+export interface AcceptInvitationRequest {
+  token: string;
+  password: string;
+  display_name?: string;
+}
+
+export interface AcceptedInvitationResponse {
+  tenant_id: string;
+  member_id: string;
+}
+
+export interface UpdateMemberRoleRequest {
+  role_code: Exclude<RoleCodeValue, 'OWNER'>;
+}
+
+export interface UpdateDataScopeRequest {
+  resource_type: ResourceTypeValue;
+  scope_type: DataScopeTypeValue;
+  /** Snowflake ID 必须以字符串传递，禁止转成 JS number。 */
+  shop_ids: string[];
+}
+
+export interface Role {
+  code: RoleCodeValue;
+  name: string;
+  is_system: boolean;
+  permission_codes: string[];
+  description: string | null;
+}
+
+export interface AuditLog {
+  id: string;
+  created_at: string;
+  user_id: string | null;
+  action: string;
+  resource: string;
+  resource_id: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  ip: string | null;
+  request_id: string | null;
+}
+
+export interface AuditLogQuery {
+  cursor?: string;
+  limit?: number;
+  action?: string;
+  resource?: string;
+  user_id?: string;
+  created_from?: string;
+  created_to?: string;
 }

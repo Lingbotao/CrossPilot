@@ -10,18 +10,58 @@ from app.core.request_info import client_ip, client_ua
 from app.core.response import ApiResponse, ok
 from app.db.session import get_db
 from app.schemas.auth import (
+    ConfirmPasswordRequest,
+    ConfirmPasswordResponse,
     LoginRequest,
     LoginResponse,
     LogoutRequest,
     MeResponse,
     RefreshRequest,
     RefreshResponse,
+    RegisterRequest,
+    RegisterResponse,
+    ResendVerificationRequest,
+    VerifyEmailRequest,
 )
 from app.services.auth_service import AuthService, build_current_user
+from app.services.registration_service import RegistrationService
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
 DbDep = Depends(get_db)
+
+
+@router.post(
+    "/register",
+    response_model=ApiResponse[RegisterResponse],
+    status_code=201,
+    summary="注册租户",
+)
+async def register(payload: RegisterRequest, session: AsyncSession = DbDep) -> ApiResponse[RegisterResponse]:
+    result = await RegistrationService(session).register(payload)
+    return ok(result, message="注册成功，请完成邮箱验证")
+
+
+@router.post(
+    "/verify-email",
+    response_model=ApiResponse[dict[str, str]],
+    summary="验证邮箱",
+)
+async def verify_email(payload: VerifyEmailRequest, session: AsyncSession = DbDep) -> ApiResponse[dict[str, str]]:
+    await RegistrationService(session).verify_email(payload.token)
+    return ok({"status": "verified"}, message="邮箱验证成功")
+
+
+@router.post(
+    "/resend-verification",
+    response_model=ApiResponse[dict[str, str]],
+    summary="重发验证邮件",
+)
+async def resend_verification(
+    payload: ResendVerificationRequest, session: AsyncSession = DbDep
+) -> ApiResponse[dict[str, str]]:
+    await RegistrationService(session).resend_verification(str(payload.email))
+    return ok({"status": "accepted"}, message="如果账号存在，验证链接已重新投递")
 
 
 @router.post("/login", response_model=ApiResponse[LoginResponse], summary="登录")
@@ -71,6 +111,20 @@ async def logout(
         ua=client_ua(request),
     )
     return ok({"status": "logged_out"}, message="已登出")
+
+
+@router.post(
+    "/confirm-password",
+    response_model=ApiResponse[ConfirmPasswordResponse],
+    summary="敏感操作二次确认",
+)
+async def confirm_password(
+    payload: ConfirmPasswordRequest,
+    identity: CurrentIdentity,
+    session: AsyncSession = DbDep,
+) -> ApiResponse[ConfirmPasswordResponse]:
+    result = AuthService(session).confirm_password(identity.user, payload.password, payload.action, identity.tenant.id)
+    return ok(result, message="确认成功")
 
 
 @router.get("/me", response_model=ApiResponse[MeResponse], summary="当前用户与租户上下文")

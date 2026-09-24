@@ -79,9 +79,7 @@ async def _provision_user(email: str, *, tenant_code: str | None = None) -> tupl
             session.add(tenant)
             await session.flush()
             set_tenant_id(tenant.id)
-            await session.execute(
-                text("SELECT set_config('app.current_tenant', :tid, true)"), {"tid": str(tenant.id)}
-            )
+            await session.execute(text("SELECT set_config('app.current_tenant', :tid, true)"), {"tid": str(tenant.id)})
 
             user = SysUser(
                 email=email,

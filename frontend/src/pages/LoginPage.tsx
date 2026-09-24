@@ -8,10 +8,11 @@
 import { LockOutlined, MailOutlined, ShopOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Form, Input, Space, Typography } from 'antd';
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { ErrorCode, type LoginRequest } from '@/api/types';
+import zhCN from '@/i18n/zh-CN';
 import { useAuthStore } from '@/store/auth';
 
 interface LoginFormValues extends LoginRequest {
@@ -31,12 +32,14 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [needTenantCode, setNeedTenantCode] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
-  const redirectTo = (location.state as { from?: string } | null)?.from ?? '/dashboard';
+  const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
 
   const handleSubmit = async (values: LoginFormValues) => {
     setSubmitting(true);
     setErrorText(null);
+    setUnverifiedEmail(null);
     try {
       await login(values);
       navigate(redirectTo, { replace: true });
@@ -47,6 +50,9 @@ export function LoginPage() {
         // 与其猜，不如直接把租户输入框展开，让用户明确选择。
         if (error.message.includes('tenant_code')) {
           setNeedTenantCode(true);
+        }
+        if (error.code === ErrorCode.EMAIL_NOT_VERIFIED) {
+          setUnverifiedEmail(values.email);
         }
       } else {
         setErrorText('登录失败，请稍后重试');
@@ -79,6 +85,18 @@ export function LoginPage() {
         {errorText ? (
           <Alert type="error" showIcon message={errorText} style={{ marginBottom: 16 }} closable onClose={() => setErrorText(null)} />
         ) : null}
+        {unverifiedEmail ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={
+              <Link to={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}>
+                {zhCN.auth.resendVerification}
+              </Link>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        ) : null}
 
         <Form<LoginFormValues> layout="vertical" onFinish={handleSubmit} requiredMark={false} size="large">
           <Form.Item
@@ -110,6 +128,10 @@ export function LoginPage() {
             </Button>
           </Form.Item>
         </Form>
+
+        <Typography.Paragraph style={{ textAlign: 'center', marginBottom: 16 }}>
+          {zhCN.auth.noAccount} <Link to="/register">{zhCN.auth.register}</Link>
+        </Typography.Paragraph>
 
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           开发环境演示账号（密码 Demo@CrossPilot2026）：

@@ -77,6 +77,8 @@ def create_app() -> FastAPI:
             {"name": "系统", "description": "健康探针、版本信息"},
             {"name": "认证", "description": "登录、刷新、登出、当前用户"},
             {"name": "租户", "description": "租户上下文、角色与权限点"},
+            {"name": "成员与权限", "description": "成员邀请、角色和数据范围"},
+            {"name": "审计", "description": "不可篡改的敏感操作审计日志"},
         ],
     )
 
@@ -88,7 +90,13 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Trace-Id"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Trace-Id",
+            "X-Confirmation-Token",
+        ],
         expose_headers=["X-Trace-Id"],
     )
     app.add_middleware(GZipMiddleware, minimum_size=1024)

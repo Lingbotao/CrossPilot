@@ -300,3 +300,51 @@ class TestLoginLogNullTenantRow:
             return int(returned)
 
         assert _run(_insert_returning()) == row_id
+
+
+class TestAuditLogIsolationAndImmutability:
+    def test_audit_log_is_tenant_scoped_and_cannot_be_modified(self, migrated: None) -> None:
+        row_id = 920000000000000000 + time.time_ns() % 10**12
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO audit_log (id, tenant_id, created_at, action, resource) "
+                        "VALUES (:id, :tid, now(), 'SYSTEM_CONFIG', 'security_test')"
+                    ),
+                    {"id": row_id, "tid": TENANT_A},
+                )
+                await session.commit()
+            await engine.dispose()
+
+        async def _count(tenant_id: int) -> int:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                value = (
+                    await session.execute(text("SELECT count(*) FROM audit_log WHERE id = :id"), {"id": row_id})
+                ).scalar_one()
+            await engine.dispose()
+            return int(value)
+
+        async def _tamper() -> int:
+            engine, factory = _app_session()
+            try:
+                async with factory() as session:
+                    await _bind(session, TENANT_A)
+                    result = await session.execute(
+                        text("UPDATE audit_log SET action = 'LOGIN' WHERE tenant_id = :tid AND id = :id"),
+                        {"tid": TENANT_A, "id": row_id},
+                    )
+                    await session.commit()
+                    return int(getattr(result, "rowcount", 0) or 0)
+            finally:
+                await engine.dispose()
+
+        _run(_seed())
+        assert _run(_count(TENANT_A)) == 1
+        assert _run(_count(TENANT_B)) == 0
+        assert _run(_tamper()) == 0

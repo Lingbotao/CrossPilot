@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: int = 7
     login_max_failures: int = 5
     login_lock_minutes: int = 15
+    email_verification_ttl_hours: int = 24
+    member_invitation_ttl_hours: int = 72
+    confirmation_ttl_minutes: int = 5
+    frontend_base_url: str = "http://localhost:5173"
 
     # ------------------------------------------------------------------ 字段级加密
     credential_aes_key: str = ""

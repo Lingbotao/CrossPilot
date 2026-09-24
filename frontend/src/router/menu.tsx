@@ -11,14 +11,21 @@ import {
   DashboardOutlined,
   GlobalOutlined,
   InboxOutlined,
+  KeyOutlined,
   SafetyOutlined,
   ShopOutlined,
   ShoppingCartOutlined,
+  TeamOutlined,
   WalletOutlined,
 } from '@ant-design/icons';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 
 import { Perm, type PermValue } from '@/api/types';
+import zhCN from '@/i18n/zh-CN';
+import { DashboardPage } from '@/pages/DashboardPage';
+import { AuditPage } from '@/pages/system/AuditPage';
+import { MembersPage } from '@/pages/system/MembersPage';
+import { RolesPage } from '@/pages/system/RolesPage';
 
 export interface MenuItemConfig {
   key: string;
@@ -29,22 +36,25 @@ export interface MenuItemConfig {
   /** 该功能在哪个里程碑交付 —— 未交付的页面会渲染占位说明 */
   milestone: string;
   delivered: boolean;
+  /** 已交付页面组件；未交付项由路由统一渲染 PlaceholderPage。 */
+  component?: ComponentType;
 }
 
 export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'dashboard',
     path: '/dashboard',
-    label: '数据看板',
+    label: zhCN.menu.dashboard,
     icon: <DashboardOutlined />,
     permission: Perm.DASHBOARD_READ,
     milestone: 'M5（Week 10–11）',
-    delivered: false,
+    delivered: true,
+    component: DashboardPage,
   },
   {
     key: 'shops',
     path: '/shops',
-    label: '店铺授权',
+    label: zhCN.menu.shops,
     icon: <ShopOutlined />,
     permission: Perm.SHOP_READ,
     milestone: 'M1（Week 2–3）',
@@ -53,7 +63,7 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'orders',
     path: '/orders',
-    label: '订单管理',
+    label: zhCN.menu.orders,
     icon: <ShoppingCartOutlined />,
     permission: Perm.ORDER_READ,
     milestone: 'M2（Week 4–5）',
@@ -62,7 +72,7 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'products',
     path: '/products',
-    label: '商品库',
+    label: zhCN.menu.products,
     icon: <AppstoreOutlined />,
     permission: Perm.PRODUCT_READ,
     milestone: 'M3（Week 6–7）',
@@ -71,7 +81,7 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'inventory',
     path: '/inventory',
-    label: '库存管理',
+    label: zhCN.menu.inventory,
     icon: <InboxOutlined />,
     permission: Perm.INVENTORY_READ,
     milestone: 'M3（Week 6–7）',
@@ -80,7 +90,7 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'compliance',
     path: '/compliance',
-    label: '合规与算账',
+    label: zhCN.menu.compliance,
     icon: <SafetyOutlined />,
     permission: Perm.COMPLIANCE_READ,
     milestone: 'M4（Week 8–9）· ★ 核心差异化',
@@ -89,7 +99,7 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'purchase',
     path: '/purchase',
-    label: '采购管理',
+    label: zhCN.menu.purchase,
     icon: <GlobalOutlined />,
     permission: Perm.PURCHASE_READ,
     milestone: 'M5（Week 10–11）',
@@ -98,19 +108,40 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'finance',
     path: '/finance',
-    label: '财务与利润',
+    label: zhCN.menu.finance,
     icon: <WalletOutlined />,
     permission: Perm.FINANCE_READ,
     milestone: 'M4/M5',
     delivered: false,
   },
   {
-    key: 'system',
-    path: '/system',
-    label: '系统管理',
+    key: 'members',
+    path: '/system/members',
+    label: zhCN.menu.members,
+    icon: <TeamOutlined />,
+    permission: Perm.MEMBER_READ,
+    milestone: 'M1（Week 2–3）',
+    delivered: true,
+    component: MembersPage,
+  },
+  {
+    key: 'roles',
+    path: '/system/roles',
+    label: zhCN.menu.roles,
+    icon: <KeyOutlined />,
+    permission: Perm.MEMBER_READ,
+    milestone: 'M1（Week 2–3）',
+    delivered: true,
+    component: RolesPage,
+  },
+  {
+    key: 'audit',
+    path: '/system/audit-logs',
+    label: zhCN.menu.audit,
     icon: <AuditOutlined />,
-    permission: Perm.SYSTEM_READ,
-    milestone: 'M6（Week 12）',
-    delivered: false,
+    permission: Perm.AUDIT_READ,
+    milestone: 'M1（Week 2–3）',
+    delivered: true,
+    component: AuditPage,
   },
 ] as const;

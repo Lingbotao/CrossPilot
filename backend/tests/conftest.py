@@ -71,6 +71,15 @@ def _reset_token_blacklist():
 
 
 @pytest.fixture(autouse=True)
+def _reset_email_outbox():
+    from app.services.outbox import reset_outbox
+
+    reset_outbox()
+    yield
+    reset_outbox()
+
+
+@pytest.fixture(autouse=True)
 def _reset_context_vars():
     """用例之间清空 contextvar，避免租户上下文串到下一个用例。"""
     from app.core import context as ctx
