@@ -1,0 +1,82 @@
+# =============================================================================
+# pre-commit 门禁（PRD NFR / 开发规划 §3.3）
+#
+#   make hooks-install    → 安装钩子（只需一次）
+#   pre-commit run --all-files   → 手动全量检查
+#
+# 设计原则：**每个钩子都必须在 3 秒内跑完**。
+# 慢钩子会被 `git commit --no-verify` 绕过，等于没有。
+# 全量测试放 CI，不放这里。
+# =============================================================================
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  # ---------------------------------------------------------------- 基础卫生
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+      - id: detect-private-key
+      - id: check-yaml
+      - id: check-json
+        exclude: ^frontend/tsconfig.*\.json$   # tsconfig 允许注释风格，JSON 解析器会报错
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: \.(svg|lock)$
+      - id: trailing-whitespace
+        exclude: ^docs/
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # ---------------------------------------------------------------- 后端 lint
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff check (backend)
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^backend/.*\.py$
+      - id: ruff-format
+        name: ruff format (backend)
+        files: ^backend/.*\.py$
+
+  # ---------------------------------------------------------------- 本地门禁
+  - repo: local
+    hooks:
+      - id: secret-scan
+        name: secret scan（密钥不得入库 C5/NFR-S-02）
+        entry: python3 scripts/check_secrets.py
+        language: system
+        pass_filenames: true
+        exclude: ^(docs/|.*\.md$)
+
+      - id: shell-locale
+        name: shell locale（$VAR 后不得紧跟非 ASCII 字符）
+        entry: python3 scripts/check_shell_locale.py
+        language: system
+        files: \.sh$
+
+      - id: backend-typecheck
+        name: mypy (backend)
+        entry: bash -c 'cd backend && .venv/bin/mypy app'
+        language: system
+        files: ^backend/app/.*\.py$
+        pass_filenames: false
+
+      - id: frontend-typecheck
+        name: tsc --noEmit (frontend)
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        files: ^frontend/src/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: frontend-eslint
+        name: eslint (frontend)
+        entry: bash -c 'cd frontend && npx eslint --max-warnings 0'
+        language: system
+        files: ^frontend/src/.*\.(ts|tsx)$
+        pass_filenames: false

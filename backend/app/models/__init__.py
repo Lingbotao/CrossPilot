@@ -1,0 +1,59 @@
+"""SQLAlchemy 模型注册表。
+
+⚠️ **新增模型文件必须在这里 import**，否则：
+1. Alembic autogenerate 看不到它 → 迁移里缺表；
+2. 分区/RLS 策略生成脚本漏掉它 → 隔离失效。
+
+按 Alembic 迁移批次分组（PRD 6 章）：
+    批次 1（M0）租户与权限域 —— 已完成
+    批次 2（M1）平台与授权域
+    批次 3（M2）订单域 + 系统配置域
+    批次 4（M3）商品域 + 库存仓储域
+    批次 5（M4）合规域 + 财务域
+    批次 6（M5）采购域 + 广告消息域
+"""
+
+from __future__ import annotations
+
+from app.db.base import Base
+from app.models.audit import AuditLog, LoginLog
+from app.models.enums import (
+    AuditAction,
+    DataScopeType,
+    InvitationStatus,
+    LoginResult,
+    ResourceType,
+    TenantPlan,
+    TenantStatus,
+    TenantUserStatus,
+    UserStatus,
+)
+from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
+
+__all__ = [
+    "Base",
+    # 租户与权限域（批次 1）
+    "Tenant",
+    "SysUser",
+    "TenantUser",
+    "Role",
+    "UserDataScope",
+    "MemberInvitation",
+    "AuditLog",
+    "LoginLog",
+    # 枚举
+    "TenantPlan",
+    "TenantStatus",
+    "UserStatus",
+    "TenantUserStatus",
+    "InvitationStatus",
+    "DataScopeType",
+    "ResourceType",
+    "LoginResult",
+    "AuditAction",
+]
+
+# 供脚本/测试使用：当前已落地的租户表清单
+TENANT_SCOPED_TABLES: tuple[str, ...] = tuple(
+    sorted(t.name for t in Base.metadata.tables.values() if "tenant_id" in t.c)
+)

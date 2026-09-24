@@ -1,0 +1,142 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "crosspilot-backend"
+version = "0.1.0"
+description = "CrossPilot — 跨境电商多平台运营中台（后端）"
+requires-python = ">=3.12"
+dependencies = [
+  # Web 框架
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "python-multipart>=0.0.9",
+  # 数据层
+  "sqlalchemy[asyncio]>=2.0.30",
+  "asyncpg>=0.29.0",
+  "alembic>=1.13.0",
+  "redis>=5.0.0",
+  # 校验与配置
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "email-validator>=2.1.0",
+  # 安全
+  "pyjwt>=2.8.0",
+  "bcrypt>=4.1.0",
+  "cryptography>=42.0.0",
+  # 可观测
+  "structlog>=24.1.0",
+  "python-ulid>=2.7.0",
+  # 异步任务
+  "celery[redis]>=5.4.0",
+  # 出站 HTTP（平台适配器）
+  "httpx>=0.27.0",
+  # 对象存储
+  "boto3>=1.34.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "pytest-asyncio>=0.23.0",
+  "pytest-cov>=5.0.0",
+  "aiosqlite>=0.20.0",   # 仅用于「租户过滤器」机制的本地无 PG 测试
+  "ruff>=0.5.0",
+  "mypy>=1.10.0",
+  "pre-commit>=3.7.0",
+  "httpx>=0.27.0",
+  "types-boto3>=1.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "C4",       # comprehensions
+  "UP",       # pyupgrade
+  "S",        # bandit（安全）
+  "T20",      # 禁止 print
+  "SIM",      # simplify
+  "RUF",
+]
+ignore = [
+  "E501",    # 行宽由 formatter 处理
+  "B008",    # FastAPI 的 Depends() 默认值是惯用法
+  "S101",    # 测试中允许 assert
+  # 本项目注释/文档/提示语均为中文，全角标点是刻意使用，不是笔误：
+  "RUF001",  # ambiguous-unicode-character-string
+  "RUF002",  # ambiguous-unicode-character-docstring
+  "RUF003",  # ambiguous-unicode-character-comment
+  # `__all__` 按业务域分组排列（带分组注释）比纯字母序更易读
+  "RUF022",
+  # SQLAlchemy 2.0 的 Generic[ModelT] 写法需要显式 TypeVar，不用 PEP 695 语法
+  "UP046",
+  "UP047",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "T20"]
+"scripts/**" = ["T20"]
+# 配置与安全模块里出现的"默认密钥占位串"是刻意为之（启动期自检会拦下），不是泄露
+"app/core/config.py" = ["S104", "S105", "S106"]
+# bandit 会把 token_type="Bearer"、REFRESH_TOKEN 这类标识符误判成口令，都是误报
+"app/core/security.py" = ["S105", "S106"]
+"app/schemas/auth.py" = ["S105"]
+"app/adapters/errors.py" = ["S105"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unreachable = true
+disallow_untyped_decorators = false
+ignore_missing_imports = true
+exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "scripts.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+  "needs_db: 需要真实 PostgreSQL（本机无 Docker 时自动跳过）",
+  "contract: 契约测试（真实报文 fixture）",
+  "slow: 慢用例",
+]
+filterwarnings = [
+  "error::DeprecationWarning:app.*",
+  "ignore::DeprecationWarning:passlib.*",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/tasks/*", "alembic/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@abstractmethod",
+]

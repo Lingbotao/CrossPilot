@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2f54eb" />
+    <!-- 后台系统不需要被搜索引擎收录；同时避免把内部路径泄露给爬虫 -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>CrossPilot · 跨境电商多平台运营中台</title>
+    <style>
+      /* 首屏骨架：JS 包还在下载时先给一个浅色底，避免白屏闪烁 */
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: #f5f6f8;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+          'Microsoft YaHei', Arial, sans-serif;
+      }
+      #root:empty::after {
+        content: '正在加载 CrossPilot…';
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #8c8c8c;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,123 @@
+# ============================================================================
+# CrossPilot .gitignore
+#
+# 规则顺序：操作系统 → 密钥 → IDE → Agent 工作区 → Python → Node → 运行时数据 → 本机产物
+# 语法提示：以 / 开头 = 只匹配仓库根；不带 / = 匹配任意层级（如 `dist/` 会连
+#          frontend/dist/ 一起忽略）。用 `git check-ignore -v <path>` 可查是哪条纹中。
+# 原则：只忽略「产物 / 机器特有 / 机密」，**任何源码与模板都必须入库**。
+# ============================================================================
+
+# ---- 操作系统 ----
+.DS_Store
+._*
+.Spotlight-V100/
+.Trashes/
+.fseventsd/
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---- 密钥与环境变量（C5 / NFR-S-02：严禁入库）----
+# ⚠️ .env.example 必须入库（占位模板），务必确认里面只有假值。
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets/
+
+# ---- IDE / 编辑器 ----
+.idea/
+*.iml
+.vscode/*
+# 白名单：推荐扩展列表对 onboarding 有用，且不含本机路径
+!.vscode/extensions.json
+*.code-workspace
+*~
+*.swp
+*.swo
+
+# ---- AI Agent 工作区 ----
+# .workbuddy/memory/ 是逐日会话日志，每次对话都会变，入库只会制造无意义冲突。
+# 需要长期共享的结论请沉淀到 docs/ 或 README.md（那才是团队事实源）。
+# 若要把项目级 Skill（.workbuddy/skills/）共享给协作者，把下面一行换成：
+#   .workbuddy/*
+#   !.workbuddy/skills/
+.workbuddy/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.eggs/
+*.egg
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.cover
+
+# ---- Node / 前端 ----
+node_modules/
+.npm/
+.pnpm-store/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/.vite/
+.eslintcache
+.parcel-cache/
+.turbo/
+*.tsbuildinfo
+
+# ---- 构建产物（Python build/dist 与前端 dist 通用）----
+# 同时覆盖 frontend/dist/，故不重复书写
+build/
+dist/
+
+# ---- 运行时数据（**根锚定**，避免误伤 src/**/data 这类源码目录）----
+/data/
+/uploads/
+/exports/
+*.sqlite3
+
+# ---- Celery / 队列 ----
+celerybeat-schedule*
+celerybeat.pid
+*.pid
+*.pid.lock
+
+# ---- 日志 ----
+*.log
+logs/
+
+# ---- dev.sh 本机直跑产物（见 ./dev.sh）----
+# .dev/      日志 / PID / 便携 PostgreSQL 数据目录
+# .devtools/ 便携 PostgreSQL 二进制（解压后上百 MB，绝不能入库）
+.dev/
+.devtools/
+
+# ---- Docker 本机覆盖 ----
+docker-compose.override.yml
+docker-compose.*.local.yml
+
+# ---- 快照 / 临时 ----
+tmp/
+.cache/
+*.bak
+*.orig
+*.rej

@@ -1,0 +1,16 @@
+# ============================================================================
+# CrossPilot .gitattributes
+# 与 .editorconfig 的 end_of_line = lf 对齐：**仓库内一律 LF**。
+# 关键原因：dev.sh / *.sh 一旦被存成 CRLF，bash 会报 "\r: command not found"，
+# 且 scripts/check_shell_locale.py 的门禁判断也会被搞乱 —— 必须钉死，
+# 否则「在 Windows 上顺手改一行」就能让本机一键脚本静默失效。
+# ============================================================================
+
+* text=auto eol=lf
+
+# 仍按 CRLF 处理的（留好口子）
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 锁文件：机器生成、体积大，不参与 diff 展示（照常提交）
+package-lock.json -diff linguist-generated
