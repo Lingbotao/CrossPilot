@@ -68,6 +68,23 @@ class LoginResult(IntEnum):
     FAILURE = 2
 
 
+class ShopStatus(IntEnum):
+    ACTIVE = 1
+    AUTH_EXPIRED = 2
+    UNBOUND = 3
+
+
+class SyncTrigger(IntEnum):
+    MANUAL = 1
+    SCHEDULED = 2
+
+
+class SyncStatus(IntEnum):
+    RUNNING = 1
+    SUCCESS = 2
+    FAILED = 3
+
+
 class AuditAction:
     """审计动作码（字符串，便于导出后人工阅读）。
 
@@ -85,6 +102,7 @@ class AuditAction:
     MEMBER_REMOVE = "MEMBER_REMOVE"
     SHOP_GRANT = "SHOP_GRANT"
     SHOP_REVOKE = "SHOP_REVOKE"
+    TOKEN_REFRESH_ALERT = "TOKEN_REFRESH_ALERT"
     BATCH_SHIP = "BATCH_SHIP"
     BATCH_UPDATE = "BATCH_UPDATE"
     DATA_DELETE = "DATA_DELETE"
@@ -105,6 +123,7 @@ class AuditAction:
         MEMBER_REMOVE,
         SHOP_GRANT,
         SHOP_REVOKE,
+        TOKEN_REFRESH_ALERT,
         BATCH_SHIP,
         BATCH_UPDATE,
         DATA_DELETE,

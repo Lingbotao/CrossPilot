@@ -1,0 +1,76 @@
+{
+  "amazon": {
+    "AmazonOrderId": "111-0000000-0000001",
+    "OrderStatus": "Unshipped",
+    "BuyerInfo": {"BuyerName": "Fixture Buyer"},
+    "ShippingAddress": {"CountryCode": "US"},
+    "OrderTotal": {"CurrencyCode": "USD", "Amount": "24.500000"},
+    "PurchaseDate": "2026-01-15T08:00:00Z",
+    "LastUpdateDate": "2026-01-15T09:00:00Z",
+    "OrderItems": [
+      {
+        "SellerSKU": "SKU-AMZ-1",
+        "ASIN": "B000FIXTURE",
+        "QuantityOrdered": 1,
+        "ItemPrice": {"Amount": "24.500000"},
+        "Title": "Fixture Amazon Item"
+      }
+    ]
+  },
+  "shopee": {
+    "order_sn": "2601150000001",
+    "order_status": "READY_TO_SHIP",
+    "buyer_username": "fixture_buyer",
+    "region": "SG",
+    "currency": "SGD",
+    "total_amount": "19.900000",
+    "pay_time": 1768464000,
+    "update_time": 1768467600,
+    "item_list": [
+      {
+        "item_id": 10001,
+        "model_id": 20001,
+        "item_name": "Fixture Shopee Item",
+        "model_quantity_purchased": 2,
+        "model_discounted_price": "9.950000"
+      }
+    ]
+  },
+  "lazada": {
+    "order_id": "9000000000001",
+    "statuses": ["pending"],
+    "customer_first_name": "Fixture",
+    "address_shipping": {"country": "SG"},
+    "currency": "SGD",
+    "price": "15.000000",
+    "created_at": "2026-01-15 08:00:00 +0000",
+    "updated_at": "2026-01-15 09:00:00 +0000",
+    "items": [
+      {
+        "sku": "SKU-LZD-1",
+        "product_id": "P-LZD-1",
+        "name": "Fixture Lazada Item",
+        "quantity": 1,
+        "item_price": "15.000000"
+      }
+    ]
+  },
+  "tiktok": {
+    "id": "576460000000000001",
+    "status": "AWAITING_SHIPMENT",
+    "buyer_nickname": "fixture_buyer",
+    "recipient_address": {"region_code": "US"},
+    "payment": {"currency": "USD", "total_amount": "18.000000"},
+    "paid_time": 1768464000,
+    "update_time": 1768467600,
+    "line_items": [
+      {
+        "sku_id": "sku-tt-1",
+        "product_id": "prod-tt-1",
+        "product_name": "Fixture TikTok Item",
+        "quantity": 1,
+        "sale_price": "18.000000"
+      }
+    ]
+  }
+}

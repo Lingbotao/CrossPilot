@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     platform_tiktok_app_key: str = ""
     platform_tiktok_app_secret: str = ""
     oauth_redirect_base_url: str = "http://localhost:8000/api/v1/shops/oauth/callback"
+    platform_transport: str = "fixture"
+    oauth_state_ttl_minutes: int = 15
+    token_refresh_lead_minutes: int = 30
+    token_refresh_alert_threshold: int = 3
+    shop_data_retain_days: int = 30
+    shop_sync_stale_minutes: int = 60
 
     # ------------------------------------------------------------------ 对象存储
     s3_endpoint: str = "http://localhost:9000"

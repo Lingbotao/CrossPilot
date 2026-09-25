@@ -20,8 +20,8 @@
 
 - **M0（本阶段）**：目录与接口骨架定稿 —— 即本文件与 ``errors.py`` / ``registry.py``。
   目的是**先冻结抽象**，避免 M1 写第一个平台时才发现接口不对、回头改业务层。
-- **M1**：``base.py`` 完整实现 + 第一个平台（Shopee）+ 契约测试（真实报文 fixture）。
-- **M2**：限流器（Redis 令牌桶）、重试与死信队列、其余三个平台。
+- **M1**：``base.py``、四平台认证、fixture 报文与契约测试。真实 Sandbox 只切 ``platform_transport=live``。
+- **M2**：限流器（Redis 令牌桶）、重试与死信队列、真实订单拉取。
 
 ## ⚠️ 已知缺口（开发规划风险 N5，需在 M4 前定稿）
 
@@ -34,6 +34,7 @@ PRD 8.4 给出的 ``PlatformAdapter`` 骨架**缺少 F11 客服模块所需的�
 若坚持 V1 站内回复，需重新评估 M5 人日。
 """
 
+from app.adapters.bootstrap import register_builtin_adapters
 from app.adapters.errors import AdapterError, RetryDecision, classify_platform_error
 from app.adapters.registry import (
     SUPPORTED_PLATFORMS,
@@ -48,4 +49,7 @@ __all__ = [
     "RetryDecision",
     "adapter_registry",
     "classify_platform_error",
+    "register_builtin_adapters",
 ]
+
+register_builtin_adapters()

@@ -95,6 +95,8 @@ ignore = [
 "app/core/security.py" = ["S105", "S106"]
 "app/schemas/auth.py" = ["S105"]
 "app/adapters/errors.py" = ["S105"]
+"app/adapters/**/*.py" = ["S105"]
+"app/models/enums.py" = ["S105"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

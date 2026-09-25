@@ -23,11 +23,15 @@ from app.models.enums import (
     InvitationStatus,
     LoginResult,
     ResourceType,
+    ShopStatus,
+    SyncStatus,
+    SyncTrigger,
     TenantPlan,
     TenantStatus,
     TenantUserStatus,
     UserStatus,
 )
+from app.models.platform import Platform, PlatformApiLog, Shop, ShopCredential, ShopGroup, SyncTask
 from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
 
 __all__ = [
@@ -41,6 +45,13 @@ __all__ = [
     "MemberInvitation",
     "AuditLog",
     "LoginLog",
+    # 平台与授权域（批次 2）
+    "Platform",
+    "Shop",
+    "ShopCredential",
+    "ShopGroup",
+    "SyncTask",
+    "PlatformApiLog",
     # 枚举
     "TenantPlan",
     "TenantStatus",
@@ -51,6 +62,9 @@ __all__ = [
     "ResourceType",
     "LoginResult",
     "AuditAction",
+    "ShopStatus",
+    "SyncStatus",
+    "SyncTrigger",
 ]
 
 # 供脚本/测试使用：当前已落地的租户表清单

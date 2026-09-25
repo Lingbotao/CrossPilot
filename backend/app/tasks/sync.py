@@ -60,10 +60,13 @@ def scan_due_shops() -> dict[str, Any]:
 
 @celery_app.task(name="sync.refresh_expiring_credentials")
 def refresh_expiring_credentials() -> dict[str, Any]:
-    """令牌续期巡检：快过期的刷新、已过期的标记店铺需重新授权（M2 落地）。"""
+    """令牌续期巡检：到期前刷新，连续失败达到阈值则告警并标记重新授权。"""
     configure_logging()
-    log.info("refresh_expiring_credentials_tick")
-    return {"refreshed": 0, "status": "not_implemented", "until": "M2"}
+    from app.services.credential_service import refresh_expiring_credentials as _refresh
+
+    result = asyncio.run(_refresh())
+    log.info("refresh_expiring_credentials_done", **result)
+    return result
 
 
 @celery_app.task(name="sync.scan_dead_letter")

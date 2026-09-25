@@ -27,7 +27,7 @@ from app.core.config import settings
 from app.core.errors import TokenExpiredError, UnauthenticatedError
 
 TokenType = Literal["access", "refresh"]
-PurposeType = Literal["email_verify", "member_invite", "confirmation"]
+PurposeType = Literal["email_verify", "member_invite", "confirmation", "shop_oauth"]
 
 _ALGO_BCRYPT_SHA256 = "bcrypt-sha256"
 

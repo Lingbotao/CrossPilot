@@ -357,3 +357,63 @@ export interface AuditLogQuery {
   created_from?: string;
   created_to?: string;
 }
+
+export type ShopHealth = 'green' | 'yellow' | 'red';
+export type SyncModule = 'order' | 'product' | 'inventory';
+
+export interface Shop {
+  id: string;
+  platform_code: string;
+  site_code: string;
+  shop_name: string;
+  platform_shop_id: string;
+  status: number;
+  health: ShopHealth;
+  health_reason: string | null;
+  last_sync_at: string | null;
+  last_sync_status: number | null;
+  last_error: string | null;
+  auth_expires_at: string | null;
+  data_retain_until: string | null;
+}
+
+export interface PlatformSiteCatalog {
+  code: string;
+  name: string;
+  sites: string[];
+}
+
+export interface AuthUrlResponse {
+  url: string;
+  state: string;
+  platform: string;
+  site_code: string;
+}
+
+export interface SyncTask {
+  id: string;
+  shop_id: string;
+  module: string;
+  trigger_type: number;
+  status: number;
+  started_at: string | null;
+  finished_at: string | null;
+  since: string | null;
+  until: string | null;
+  stats: {
+    pulled?: number;
+    first_order?: {
+      platform_order_id: string;
+      unified_status: string;
+      currency: string;
+      total_amount: string;
+    } | null;
+  };
+  error: string | null;
+  created_at: string;
+}
+
+export interface UnbindShopResponse {
+  status: string;
+  data_retain_until: string;
+}

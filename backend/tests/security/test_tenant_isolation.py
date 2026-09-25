@@ -348,3 +348,51 @@ class TestAuditLogIsolationAndImmutability:
         assert _run(_count(TENANT_A)) == 1
         assert _run(_count(TENANT_B)) == 0
         assert _run(_tamper()) == 0
+
+
+class TestShopIsolation:
+    def test_shop_rows_are_tenant_scoped(self, migrated: None) -> None:
+        shop_a = 930000000000000000 + time.time_ns() % 10**12
+        shop_b = shop_a + 1
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, platform_shop_id, status) "
+                        "VALUES (:id, :tid, 'shopee', 'SG', :name, :shop, 1)"
+                    ),
+                    {"id": shop_a, "tid": TENANT_A, "name": "A", "shop": f"seller-{shop_a}"},
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, platform_shop_id, status) "
+                        "VALUES (:id, :tid, 'shopee', 'SG', :name, :shop, 1)"
+                    ),
+                    {"id": shop_b, "tid": TENANT_B, "name": "B", "shop": f"seller-{shop_b}"},
+                )
+                await session.commit()
+            await engine.dispose()
+
+        async def _ids(tenant_id: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (
+                    (
+                        await session.execute(
+                            text("SELECT id FROM shop WHERE id IN (:a, :b)"),
+                            {"a": shop_a, "b": shop_b},
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        _run(_seed())
+        assert _run(_ids(TENANT_A)) == {shop_a}
+        assert _run(_ids(TENANT_B)) == {shop_b}
