@@ -7,9 +7,7 @@ PRD 13.2 第 4 条：**每个新增租户表都必须同步补越权用例**。
 本地没有 Docker / PostgreSQL 时整个文件会被跳过（不会失败）；
 CI 与 `docker compose up` 之后用 ``make test-security`` 跑。
 
-说明：M0 阶段只有批次 1 的表，因此这里用 ``role`` 作为被攻击对象。
-批次 3（M2）引入 ``sales_order`` 后，会补上 DoD 里那条
-「租户 A 查租户 B 的订单返回 404」的端到端用例。
+订单表 ``sales_order`` 有单独用例：租户 A 看不到租户 B 的订单行。
 """
 
 from __future__ import annotations
@@ -396,3 +394,97 @@ class TestShopIsolation:
         _run(_seed())
         assert _run(_ids(TENANT_A)) == {shop_a}
         assert _run(_ids(TENANT_B)) == {shop_b}
+
+
+class TestSalesOrderIsolation:
+    def test_tenant_cannot_read_another_tenants_order(self, migrated: None) -> None:
+        shop_a = 940000000000000000 + time.time_ns() % 10**12
+        shop_b = shop_a + 1
+        order_a = shop_a + 2
+        order_b = shop_a + 3
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id, name in (
+                    (shop_a, TENANT_A, "order-a"),
+                    (shop_b, TENANT_B, "order-b"),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', :name, :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "name": name, "shop": f"seller-{shop_id}"},
+                    )
+                await session.execute(
+                    text(
+                        "INSERT INTO sales_order ("
+                        "id, tenant_id, shop_id, platform_code, platform_order_id, idempotency_key, "
+                        "platform_status, unified_status, currency, item_amount, shipping_amount, "
+                        "tax_amount, discount_amount, total_amount"
+                        ") VALUES ("
+                        ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'TO_SHIP', 'SGD', "
+                        "19.9, 0, 0, 0, 19.9)"
+                    ),
+                    {
+                        "id": order_a,
+                        "tid": TENANT_A,
+                        "shop": shop_a,
+                        "pid": f"A-{order_a}",
+                        "key": f"shopee:{shop_a}:A-{order_a}",
+                    },
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO sales_order ("
+                        "id, tenant_id, shop_id, platform_code, platform_order_id, idempotency_key, "
+                        "platform_status, unified_status, currency, item_amount, shipping_amount, "
+                        "tax_amount, discount_amount, total_amount"
+                        ") VALUES ("
+                        ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'TO_SHIP', 'SGD', "
+                        "19.9, 0, 0, 0, 19.9)"
+                    ),
+                    {
+                        "id": order_b,
+                        "tid": TENANT_B,
+                        "shop": shop_b,
+                        "pid": f"B-{order_b}",
+                        "key": f"shopee:{shop_b}:B-{order_b}",
+                    },
+                )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(tenant_id: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (
+                    (
+                        await session.execute(
+                            text("SELECT id FROM sales_order WHERE id IN (:a, :b)"),
+                            {"a": order_a, "b": order_b},
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_header() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM sales_order WHERE id = :id"), {"id": order_a})
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        assert _run(_visible(TENANT_A)) == {order_a}
+        assert _run(_visible(TENANT_B)) == {order_b}
+        with pytest.raises(Exception):  # noqa: B017 - 应用角色对订单主表没有 DELETE
+            _run(_delete_header())

@@ -61,8 +61,8 @@ dev-doctor: ## 体检本机开发环境（只读，不改动任何文件）
 api: ## 本机直跑 API（热重载）
 	cd $(BACKEND) && .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-worker: ## 本机直跑 Celery Worker
-	cd $(BACKEND) && .venv/bin/celery -A app.tasks.celery_app:celery_app worker -l info
+worker: ## 本机单进程消费分级队列（不消费 dlq）
+	cd $(BACKEND) && .venv/bin/celery -A app.tasks.celery_app:celery_app worker -l info -Q "$$(.venv/bin/python -c 'from app.sync_engine.queues import local_dev_queues; print(local_dev_queues())')"
 
 beat: ## 本机直跑 Celery Beat
 	cd $(BACKEND) && .venv/bin/celery -A app.tasks.celery_app:celery_app beat -l info

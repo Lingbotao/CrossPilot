@@ -188,6 +188,16 @@ class ShopService:
         shop = await self.shops.get_or_404(shop_id)
         if shop.status == int(ShopStatus.AUTH_EXPIRED):
             raise AppError("店铺授权已过期，请重新授权", code=ErrorCode.SHOP_GRANT_EXPIRED)
+        if module == "order":
+            from app.services.order_sync import OrderSyncService
+
+            synced = await OrderSyncService(self.session).run(
+                shop, trigger=SyncTrigger.MANUAL, since=since, until=until
+            )
+            if synced.payload.get("status") == "skipped" or synced.task_id is None:
+                raise AppError("店铺当前不能同步订单", code=ErrorCode.SHOP_GRANT_EXPIRED)
+            stored = await self.tasks.get_or_404(synced.task_id)
+            return self._task_response(stored)
         now = datetime.now(UTC)
         window_since = since or (now - timedelta(days=1))
         window_until = until or now

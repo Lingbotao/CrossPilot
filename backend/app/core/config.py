@@ -81,6 +81,27 @@ class Settings(BaseSettings):
     shop_data_retain_days: int = 30
     shop_sync_stale_minutes: int = 60
 
+    # ------------------------------------------------------------------ 同步引擎（M2，约束 C5）
+    # 平台 QPS 不在这里，见 adapters/quotas.py。下面是退避、降速和熔断策略。
+    sync_slowdown_ratio: float = 0.5
+    sync_penalty_floor: float = 0.25
+    sync_recover_after_successes: int = 20
+    sync_backoff_seconds: str = "1,4,16"
+    sync_jitter_ratio: float = 0.2
+    sync_circuit_failure_ratio: float = 0.5
+    sync_circuit_min_samples: int = 4
+    sync_circuit_window: int = 20
+    sync_circuit_open_seconds: int = 300
+    sync_bloom_bit_size: int = 1_048_576
+    sync_bloom_hash_count: int = 7
+    sync_beat_lock_ttl_seconds: int = 240
+    sync_state_ttl_seconds: int = 3600
+    # 订单增量：向前重叠，避免平台延迟写入造成漏单。首次没有游标时回看一整天。
+    sync_order_overlap_seconds: int = 300
+    sync_order_initial_lookback_seconds: int = 86400
+    sync_order_interval_seconds: int = 60
+    sync_order_max_pages: int = 20
+
     # ------------------------------------------------------------------ 对象存储
     s3_endpoint: str = "http://localhost:9000"
     s3_region: str = "us-east-1"
@@ -137,7 +158,15 @@ class Settings(BaseSettings):
         """启动期自检：把「配置缺失」从运行期错误提前到启动期。
 
         开发环境只告警，生产环境直接拒绝启动 —— 明文密钥上生产是灾难级事故。
+        同步引擎策略写错则任何环境都拒绝启动，避免限流和熔断按错误参数跑。
         """
+        from app.sync_engine.policy import policy_from_settings
+
+        try:
+            policy_from_settings(self)
+        except ValueError as exc:
+            raise RuntimeError(f"同步引擎策略配置无效：{exc}") from exc
+
         problems: list[str] = []
         if self.jwt_secret == _DEFAULT_JWT_SECRET:
             problems.append("JWT_SECRET 仍在用默认值")

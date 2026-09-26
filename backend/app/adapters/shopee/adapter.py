@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from typing import Any
 from urllib.parse import quote
 
 from app.adapters.base import CredentialView, PageResult, PlatformAdapter, RateLimitSpec, TokenBundle, UnifiedOrder
@@ -85,7 +86,6 @@ class ShopeeAdapter(PlatformAdapter):
         until: datetime,
         cursor: str | None = None,
     ) -> PageResult[UnifiedOrder]:
-        del cursor
         partner_id, partner_key = app_credentials(self.platform)
         timestamp = int(time.time())
         sign = shopee_sign(partner_id=partner_id, partner_key=partner_key, path=_ORDER_PATH, timestamp=timestamp)
@@ -93,10 +93,10 @@ class ShopeeAdapter(PlatformAdapter):
             f"{_HOST}{_ORDER_PATH}?partner_id={partner_id}&timestamp={timestamp}&sign={sign}"
             f"&time_from={int(since.timestamp())}&time_to={int(until.timestamp())}"
         )
+        if cursor:
+            url = f"{url}&cursor={quote(cursor, safe='')}"
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
-        status = str(raw.get("order_status") or "")
-        order = shopee_order(raw, shop_id=cred.shop_id, unified_status=self.unified_status(status))
-        return PageResult(items=[order], next_cursor=None)
+        return _shopee_page(self, raw, cred)
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)
@@ -122,6 +122,23 @@ def _with_shop_id(bundle: TokenBundle, platform_shop_id: str) -> TokenBundle:
         shop_name=bundle.shop_name,
         extra=bundle.extra,
     )
+
+
+def _shopee_page(adapter: ShopeeAdapter, raw: dict[str, Any], cred: CredentialView) -> PageResult[UnifiedOrder]:
+    body = raw.get("response") if isinstance(raw.get("response"), dict) else raw
+    rows = body.get("order_list") if isinstance(body, dict) else None
+    if isinstance(rows, list):
+        items: list[UnifiedOrder] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("order_status") or "")
+            items.append(shopee_order(row, shop_id=cred.shop_id, unified_status=adapter.unified_status(status)))
+        token = body.get("next_cursor") if isinstance(body, dict) else None
+        return PageResult(items=items, next_cursor=str(token) if token else None)
+    status = str(raw.get("order_status") or "")
+    order = shopee_order(raw, shop_id=cred.shop_id, unified_status=adapter.unified_status(status))
+    return PageResult(items=[order], next_cursor=None)
 
 
 __all__ = ["ShopeeAdapter"]

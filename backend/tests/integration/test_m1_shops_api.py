@@ -142,6 +142,18 @@ def test_shop_grant_sync_unbind_and_isolation(client: TestClient) -> None:
     assert first["platform_order_id"] == "2601150000001"
     assert first["total_amount"] == "19.900000"
     assert isinstance(first["total_amount"], str)
+    assert task["stats"]["inserted"] == 1
+
+    again = client.post(
+        f"/api/v1/shops/{sg['id']}/sync",
+        headers={**headers, "Idempotency-Key": _unique("sync-again")},
+        json={"module": "order"},
+    )
+    assert again.status_code == 200, again.text
+    second = again.json()["data"]["stats"]
+    assert second["pulled"] == 1
+    assert second["inserted"] == 0
+    assert second["skipped"] == 1
 
     listed = client.get("/api/v1/shops", headers=headers)
     assert listed.status_code == 200, listed.text

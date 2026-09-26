@@ -7,7 +7,7 @@
 按 Alembic 迁移批次分组（PRD 6 章）：
     批次 1（M0）租户与权限域 —— 已完成
     批次 2（M1）平台与授权域
-    批次 3（M2）订单域 + 系统配置域
+    批次 3（M2）订单域 —— sales_order / order_item / shop_sync_cursor 已落地；状态机与发货单仍在后续任务
     批次 4（M3）商品域 + 库存仓储域
     批次 5（M4）合规域 + 财务域
     批次 6（M5）采购域 + 广告消息域
@@ -31,6 +31,7 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
+from app.models.order import OrderItem, SalesOrder, ShopSyncCursor
 from app.models.platform import Platform, PlatformApiLog, Shop, ShopCredential, ShopGroup, SyncTask
 from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
 
@@ -52,6 +53,10 @@ __all__ = [
     "ShopGroup",
     "SyncTask",
     "PlatformApiLog",
+    # 订单域（批次 3）
+    "SalesOrder",
+    "OrderItem",
+    "ShopSyncCursor",
     # 枚举
     "TenantPlan",
     "TenantStatus",

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from urllib.parse import urlencode
+from typing import Any
+from urllib.parse import quote, urlencode
 
 from app.adapters.base import CredentialView, PageResult, PlatformAdapter, RateLimitSpec, TokenBundle, UnifiedOrder
 from app.adapters.credentials import app_credentials
@@ -83,11 +84,9 @@ class AmazonAdapter(PlatformAdapter):
         query = urlencode({"createdAfter": since.isoformat(), "createdBefore": until.isoformat()})
         url = f"{_ORDERS_URL}?{query}"
         if cursor:
-            url = f"{url}&NextToken={cursor}"
+            url = f"{url}&NextToken={quote(cursor, safe='')}"
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
-        status = str(raw.get("OrderStatus") or "")
-        order = amazon_order(raw, shop_id=cred.shop_id, unified_status=self.unified_status(status))
-        return PageResult(items=[order], next_cursor=None)
+        return _amazon_page(self, raw, cred)
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)
@@ -100,6 +99,23 @@ class AmazonAdapter(PlatformAdapter):
             "Shipped": "SHIPPED",
             "Canceled": "CANCELLED",
         }
+
+
+def _amazon_page(adapter: AmazonAdapter, raw: dict[str, Any], cred: CredentialView) -> PageResult[UnifiedOrder]:
+    body = raw.get("payload") if isinstance(raw.get("payload"), dict) else raw
+    rows = body.get("Orders") if isinstance(body, dict) else None
+    if isinstance(rows, list):
+        items: list[UnifiedOrder] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("OrderStatus") or "")
+            items.append(amazon_order(row, shop_id=cred.shop_id, unified_status=adapter.unified_status(status)))
+        token = body.get("NextToken") if isinstance(body, dict) else None
+        return PageResult(items=items, next_cursor=str(token) if token else None)
+    status = str(raw.get("OrderStatus") or "")
+    order = amazon_order(raw, shop_id=cred.shop_id, unified_status=adapter.unified_status(status))
+    return PageResult(items=[order], next_cursor=None)
 
 
 __all__ = ["AmazonAdapter"]

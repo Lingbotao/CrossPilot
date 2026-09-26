@@ -92,21 +92,20 @@ class TikTokAdapter(PlatformAdapter):
         until: datetime,
         cursor: str | None = None,
     ) -> PageResult[UnifiedOrder]:
-        del cursor
         app_key, secret = app_credentials(self.platform)
         params = {"app_key": app_key, "timestamp": str(int(time.time()))}
         params["sign"] = tiktok_sign(app_secret=secret, path=_ORDER_PATH, params=params)
+        body: dict[str, Any] = {"create_time_ge": int(since.timestamp()), "create_time_lt": int(until.timestamp())}
+        if cursor:
+            body["page_token"] = cursor
         _status, raw = await self.transport.request(
             "POST",
             f"{_API_HOST}{_ORDER_PATH}",
             params=params,
-            json_body={"create_time_ge": int(since.timestamp()), "create_time_lt": int(until.timestamp())},
+            json_body=body,
             platform=self.platform,
         )
-        payload = _payload(raw)
-        status = str(payload.get("status") or "")
-        order = tiktok_order(payload, shop_id=cred.shop_id, unified_status=self.unified_status(status))
-        return PageResult(items=[order], next_cursor=None)
+        return _tiktok_page(self, raw, cred)
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)
@@ -120,6 +119,24 @@ class TikTokAdapter(PlatformAdapter):
             "DELIVERED": "DELIVERED",
             "CANCELLED": "CANCELLED",
         }
+
+
+def _tiktok_page(adapter: TikTokAdapter, raw: dict[str, Any], cred: CredentialView) -> PageResult[UnifiedOrder]:
+    data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+    rows = data.get("orders") if isinstance(data, dict) else None
+    if isinstance(rows, list):
+        items: list[UnifiedOrder] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("status") or "")
+            items.append(tiktok_order(row, shop_id=cred.shop_id, unified_status=adapter.unified_status(status)))
+        token = data.get("next_page_token") if isinstance(data, dict) else None
+        return PageResult(items=items, next_cursor=str(token) if token else None)
+    payload = _payload(raw)
+    status = str(payload.get("status") or "")
+    order = tiktok_order(payload, shop_id=cred.shop_id, unified_status=adapter.unified_status(status))
+    return PageResult(items=[order], next_cursor=None)
 
 
 def _payload(body: dict[str, Any]) -> dict[str, Any]:

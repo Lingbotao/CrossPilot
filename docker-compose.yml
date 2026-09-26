@@ -6,7 +6,7 @@
 # 服务拓扑：
 #   postgres / redis / minio          基础设施
 #   migrate                           一次性任务：跑完 Alembic 就退出
-#   api / worker / beat               应用进程
+#   api / worker-high / worker-sync / worker-batch / worker-report / beat
 #   web                               nginx 托管前端构建产物 + 反代 /api
 #
 # ⚠️ 容器内的连接串用**服务名**（postgres/redis/minio），不是 localhost；
@@ -165,18 +165,43 @@ services:
       retries: 5
     restart: unless-stopped
 
-  worker:
+  # 死信队列只声明，不在这里消费。人工重放走 sync_engine.DeadLetterQueue.replay_next。
+  worker-high:
     <<: *backend-build
-    container_name: crosspilot-worker
-    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "-l", "info", "-Q", "sync,batch,report", "--concurrency", "4"]
+    container_name: crosspilot-worker-high
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "-l", "info", "-Q", "high", "--concurrency", "8", "-n", "high@%h"]
     environment: *backend-env
-    depends_on:
+    depends_on: &worker-depends
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker-sync:
+    <<: *backend-build
+    container_name: crosspilot-worker-sync
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "-l", "info", "-Q", "sync,sync.amazon,sync.shopee,sync.lazada,sync.tiktok", "--concurrency", "4", "-n", "sync@%h"]
+    environment: *backend-env
+    depends_on: *worker-depends
+    restart: unless-stopped
+
+  worker-batch:
+    <<: *backend-build
+    container_name: crosspilot-worker-batch
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "-l", "info", "-Q", "batch", "--concurrency", "4", "-n", "batch@%h"]
+    environment: *backend-env
+    depends_on: *worker-depends
+    restart: unless-stopped
+
+  worker-report:
+    <<: *backend-build
+    container_name: crosspilot-worker-report
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "-l", "info", "-Q", "report", "--concurrency", "2", "-n", "report@%h"]
+    environment: *backend-env
+    depends_on: *worker-depends
     restart: unless-stopped
 
   beat:

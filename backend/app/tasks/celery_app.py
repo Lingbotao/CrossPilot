@@ -19,13 +19,16 @@ ORM 会因为"缺少租户上下文"直接报错（这是我们刻意设计的 f
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Queue
 
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.sync_engine.queues import DECLARED_QUEUES, SyncTaskRouter
 
 celery_app = Celery(
     "crosspilot",
@@ -46,26 +49,24 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,  # 长任务场景：不要预取，避免单 worker 囤积任务
+    # ---- 队列：high / sync.{platform} / batch / report 分池；dlq 只声明不消费 ----
+    task_queues=tuple(Queue(name) for name in DECLARED_QUEUES),
+    task_routes=(SyncTaskRouter(),),
+    task_create_missing_queues=True,
+    task_default_queue="sync",
     # ---- 限流与超时 ----
     task_time_limit=600,  # 硬超时 10min：平台调用不该超过这个时间
     task_soft_time_limit=540,
     broker_connection_retry_on_startup=True,
     result_expires=3600 * 24,
-    # ---- 路由：同步任务与报表任务分开队列，避免大批量导出把同步饿死 ----
-    task_routes={
-        "sync.*": {"queue": "sync"},
-        "batch.*": {"queue": "batch"},
-        "report.*": {"queue": "report"},
-    },
-    task_default_queue="sync",
 )
 
 # 定时任务（M2/M5 逐步启用）
 celery_app.conf.beat_schedule = {
-    # 订单增量同步：各平台独立频率，具体值走 platform 配置表（约束 C5，不在这里写死）
+    # 订单增量扫描间隔来自 SYNC_ORDER_INTERVAL_SECONDS，不在这里写死分钟数。
     "beat-scan-sync-due": {
         "task": "sync.scan_due_shops",
-        "schedule": crontab(minute="*/5"),
+        "schedule": timedelta(seconds=settings.sync_order_interval_seconds),
     },
     # 平台凭证续期巡检：令牌快过期前刷新，避免同步中断
     "beat-refresh-credentials": {

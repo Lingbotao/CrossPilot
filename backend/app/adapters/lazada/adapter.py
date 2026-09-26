@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from typing import Any
 from urllib.parse import quote
 
 from app.adapters.base import CredentialView, PageResult, PlatformAdapter, RateLimitSpec, TokenBundle, UnifiedOrder
@@ -93,14 +94,16 @@ class LazadaAdapter(PlatformAdapter):
         until: datetime,
         cursor: str | None = None,
     ) -> PageResult[UnifiedOrder]:
-        del until, cursor
         app_key, secret = app_credentials(self.platform)
         params = {
             "app_key": app_key,
             "sign_method": "sha256",
             "timestamp": str(int(time.time() * 1000)),
             "created_after": since.isoformat(),
+            "update_before": until.isoformat(),
         }
+        if cursor:
+            params["cursor"] = cursor
         params["sign"] = lazada_sign(app_secret=secret, path=_ORDERS_PATH, params=params)
         host = LAZADA_AUTH_HOST[cred.site_code.upper()]
         _status, raw = await self.transport.request(
@@ -109,10 +112,7 @@ class LazadaAdapter(PlatformAdapter):
             params=params,
             platform=self.platform,
         )
-        statuses = raw.get("statuses") or []
-        status = str(statuses[0] if statuses else "")
-        order = lazada_order(raw, shop_id=cred.shop_id, unified_status=self.unified_status(status))
-        return PageResult(items=[order], next_cursor=None)
+        return _lazada_page(self, raw, cred)
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)
@@ -126,6 +126,25 @@ class LazadaAdapter(PlatformAdapter):
             "delivered": "DELIVERED",
             "canceled": "CANCELLED",
         }
+
+
+def _lazada_page(adapter: LazadaAdapter, raw: dict[str, Any], cred: CredentialView) -> PageResult[UnifiedOrder]:
+    body = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+    rows = body.get("orders") if isinstance(body, dict) else None
+    if isinstance(rows, list):
+        items: list[UnifiedOrder] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            statuses = row.get("statuses") or []
+            status = str(statuses[0] if isinstance(statuses, list) and statuses else "")
+            items.append(lazada_order(row, shop_id=cred.shop_id, unified_status=adapter.unified_status(status)))
+        token = body.get("next_cursor") if isinstance(body, dict) else None
+        return PageResult(items=items, next_cursor=str(token) if token else None)
+    statuses = raw.get("statuses") or []
+    status = str(statuses[0] if isinstance(statuses, list) and statuses else "")
+    order = lazada_order(raw, shop_id=cred.shop_id, unified_status=adapter.unified_status(status))
+    return PageResult(items=[order], next_cursor=None)
 
 
 def _named(bundle: TokenBundle, site_code: str) -> TokenBundle:
