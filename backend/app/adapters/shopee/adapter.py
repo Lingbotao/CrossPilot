@@ -3,22 +3,37 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
-from app.adapters.base import CredentialView, PageResult, PlatformAdapter, RateLimitSpec, TokenBundle, UnifiedOrder
+from app.adapters.base import (
+    CredentialView,
+    PageResult,
+    PlatformAdapter,
+    RateLimitSpec,
+    TokenBundle,
+    UnifiedOrder,
+    WebhookEvent,
+    WebhookKind,
+)
 from app.adapters.credentials import app_credentials
 from app.adapters.oauth_parse import shopee_order, token_bundle
 from app.adapters.quotas import quota_for
-from app.adapters.signing import shopee_sign
+from app.adapters.signing import shopee_push_sign, shopee_sign, signatures_match
 from app.adapters.transport import PlatformTransport, default_transport
+from app.adapters.webhook_common import coalesce_id, header_value, load_object, matching_order, nested_dict, unix_time
 
 _HOST = "https://partner.shopeemobile.com"
 _AUTH_PATH = "/api/v2/shop/auth_partner"
 _TOKEN_PATH = "/api/v2/auth/token/get"
 _REFRESH_PATH = "/api/v2/auth/access_token/get"
 _ORDER_PATH = "/api/v2/order/get_order_list"
+_ORDER_DETAIL_PATH = "/api/v2/order/get_order_detail"
+_PUSH_ORDER = 3
+_PUSH_STOCK = 8
+_PUSH_CHAT = 10
 
 
 class ShopeeAdapter(PlatformAdapter):
@@ -98,6 +113,53 @@ class ShopeeAdapter(PlatformAdapter):
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
         return _shopee_page(self, raw, cred)
 
+    async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
+        partner_id, partner_key = app_credentials(self.platform)
+        timestamp = int(time.time())
+        sign = shopee_sign(partner_id=partner_id, partner_key=partner_key, path=_ORDER_DETAIL_PATH, timestamp=timestamp)
+        url = f"{_HOST}{_ORDER_DETAIL_PATH}?partner_id={partner_id}&timestamp={timestamp}&sign={sign}"
+        _status, raw = await self.transport.request(
+            "POST",
+            url,
+            json_body={"order_sn_list": platform_order_id},
+            platform=self.platform,
+        )
+        return matching_order(_shopee_page(self, raw, cred), platform_order_id)
+
+    async def verify_webhook(self, *, body: bytes, headers: Mapping[str, str], callback_url: str) -> bool:
+        _partner_id, partner_key = app_credentials(self.platform)
+        expected = shopee_push_sign(partner_key=partner_key, url=callback_url, body=body)
+        return signatures_match(expected, header_value(headers, "authorization"))
+
+    def parse_webhook(self, body: bytes) -> WebhookEvent:
+        payload = load_object(body, platform=self.platform)
+        data = nested_dict(payload, "data")
+        shop_id = str(payload.get("shop_id") or "")
+        order_sn = str(data.get("ordersn") or data.get("order_sn") or "")
+        status = str(data.get("status") or data.get("order_status") or "")
+        updated = unix_time(data.get("update_time") or payload.get("timestamp"))
+        try:
+            code = int(payload.get("code") or 0)
+        except (TypeError, ValueError):
+            code = 0
+        return WebhookEvent(
+            platform=self.platform,
+            event_id=coalesce_id(
+                "shopee",
+                payload.get("msg_id"),
+                shop_id,
+                order_sn,
+                status,
+                data.get("update_time"),
+            ),
+            kind=_shopee_kind(code, status),
+            platform_shop_id=shop_id,
+            platform_order_id=order_sn or None,
+            platform_status=status or None,
+            occurred_at=updated,
+            raw=payload,
+        )
+
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)
 
@@ -114,6 +176,18 @@ class ShopeeAdapter(PlatformAdapter):
             "TO_RETURN": "RETURNED",
             "COMPLETED": "COMPLETED",
         }
+
+
+def _shopee_kind(code: int, status: str) -> str:
+    if code == _PUSH_STOCK:
+        return WebhookKind.INVENTORY_CHANGED.value
+    if code == _PUSH_CHAT:
+        return WebhookKind.MESSAGE_CREATED.value
+    if code != _PUSH_ORDER:
+        return WebhookKind.IGNORED.value
+    if status == "UNPAID":
+        return WebhookKind.ORDER_CREATED.value
+    return WebhookKind.ORDER_STATUS_CHANGED.value
 
 
 def _with_shop_id(bundle: TokenBundle, platform_shop_id: str) -> TokenBundle:

@@ -101,6 +101,12 @@ class Settings(BaseSettings):
     sync_order_initial_lookback_seconds: int = 86400
     sync_order_interval_seconds: int = 60
     sync_order_max_pages: int = 20
+    # Webhook（PRD 10.5）：单平台每秒 100 次、事件 ID 保留 24 小时。空 CIDR 表示平台还没给来源网段。
+    webhook_qps: int = 100
+    webhook_event_ttl_seconds: int = 86400
+    webhook_max_body_bytes: int = 1_048_576
+    webhook_source_cidrs: str = ""
+    webhook_public_base_url: str = ""
 
     # ------------------------------------------------------------------ 对象存储
     s3_endpoint: str = "http://localhost:9000"

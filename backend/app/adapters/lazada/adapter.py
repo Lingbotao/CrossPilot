@@ -3,21 +3,42 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
-from app.adapters.base import CredentialView, PageResult, PlatformAdapter, RateLimitSpec, TokenBundle, UnifiedOrder
+from app.adapters.base import (
+    CredentialView,
+    PageResult,
+    PlatformAdapter,
+    RateLimitSpec,
+    TokenBundle,
+    UnifiedOrder,
+    WebhookEvent,
+    WebhookKind,
+)
 from app.adapters.credentials import app_credentials
 from app.adapters.oauth_parse import lazada_order, token_bundle
 from app.adapters.quotas import quota_for
-from app.adapters.signing import lazada_sign
+from app.adapters.signing import lazada_push_sign, lazada_sign, signatures_match
 from app.adapters.sites import LAZADA_AUTH_HOST
 from app.adapters.transport import PlatformTransport, default_transport
+from app.adapters.webhook_common import (
+    as_int,
+    coalesce_id,
+    header_value,
+    load_object,
+    matching_order,
+    nested_dict,
+    unix_time,
+)
 
 _TOKEN_PATH = "/rest/auth/token/create"
 _REFRESH_PATH = "/rest/auth/token/refresh"
 _ORDERS_PATH = "/orders/get"
+_ORDER_DETAIL_PATH = "/order/get"
+_PUSH_ORDER = 0
 
 
 class LazadaAdapter(PlatformAdapter):
@@ -113,6 +134,57 @@ class LazadaAdapter(PlatformAdapter):
             platform=self.platform,
         )
         return _lazada_page(self, raw, cred)
+
+    async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
+        app_key, secret = app_credentials(self.platform)
+        params = {
+            "app_key": app_key,
+            "sign_method": "sha256",
+            "timestamp": str(int(time.time() * 1000)),
+            "order_id": platform_order_id,
+        }
+        params["sign"] = lazada_sign(app_secret=secret, path=_ORDER_DETAIL_PATH, params=params)
+        host = LAZADA_AUTH_HOST[cred.site_code.upper()]
+        _status, raw = await self.transport.request(
+            "GET",
+            f"{host}{_ORDER_DETAIL_PATH}",
+            params=params,
+            platform=self.platform,
+        )
+        return matching_order(_lazada_page(self, raw, cred), platform_order_id)
+
+    async def verify_webhook(self, *, body: bytes, headers: Mapping[str, str], callback_url: str) -> bool:
+        del callback_url
+        _app_key, secret = app_credentials(self.platform)
+        expected = lazada_push_sign(app_secret=secret, body=body)
+        return signatures_match(expected, header_value(headers, "authorization"))
+
+    def parse_webhook(self, body: bytes) -> WebhookEvent:
+        payload = load_object(body, platform=self.platform)
+        data = nested_dict(payload, "data")
+        seller_id = str(payload.get("seller_id") or "")
+        order_id = str(data.get("trade_order_id") or "")
+        status = str(data.get("order_status") or "")
+        message_type = as_int(payload.get("message_type"), default=-1)
+        kind = WebhookKind.IGNORED.value
+        if message_type == _PUSH_ORDER:
+            kind = WebhookKind.ORDER_CREATED.value if status == "unpaid" else WebhookKind.ORDER_STATUS_CHANGED.value
+        return WebhookEvent(
+            platform=self.platform,
+            event_id=coalesce_id(
+                "lazada",
+                seller_id,
+                order_id,
+                status,
+                data.get("status_update_time") or payload.get("timestamp"),
+            ),
+            kind=kind,
+            platform_shop_id=seller_id,
+            platform_order_id=order_id or None,
+            platform_status=status or None,
+            occurred_at=unix_time(data.get("status_update_time") or payload.get("timestamp")),
+            raw=payload,
+        )
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)

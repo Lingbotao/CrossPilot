@@ -2,17 +2,35 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from app.adapters.base import CredentialView, PageResult, PlatformAdapter, RateLimitSpec, TokenBundle, UnifiedOrder
+from app.adapters.amazon.sns import (
+    HttpSnsCertSource,
+    SnsCertSource,
+    amazon_sns_host_allowed,
+    parse_amazon_webhook,
+    verify_sns_signature,
+)
+from app.adapters.base import (
+    CredentialView,
+    PageResult,
+    PlatformAdapter,
+    RateLimitSpec,
+    TokenBundle,
+    UnifiedOrder,
+    WebhookEvent,
+)
 from app.adapters.credentials import app_credentials
+from app.adapters.errors import AdapterError
 from app.adapters.oauth_parse import amazon_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.signing import amazon_consent_url
 from app.adapters.sites import AMAZON_CONSENT_HOST, AMAZON_REGION
 from app.adapters.transport import PlatformTransport, default_transport
+from app.adapters.webhook_common import load_object, matching_order
 
 _TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 _ORDERS_URL = "https://sellingpartnerapi-na.amazon.com/orders/v0/orders"
@@ -21,8 +39,9 @@ _ORDERS_URL = "https://sellingpartnerapi-na.amazon.com/orders/v0/orders"
 class AmazonAdapter(PlatformAdapter):
     platform = "amazon"
 
-    def __init__(self, transport: PlatformTransport | None = None) -> None:
+    def __init__(self, transport: PlatformTransport | None = None, certs: SnsCertSource | None = None) -> None:
         self.transport = transport or default_transport()
+        self.certs = certs or HttpSnsCertSource()
 
     def build_auth_url(self, redirect_uri: str, state: str, *, site_code: str) -> str:
         application_id, _secret = app_credentials(self.platform)
@@ -87,6 +106,28 @@ class AmazonAdapter(PlatformAdapter):
             url = f"{url}&NextToken={quote(cursor, safe='')}"
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
         return _amazon_page(self, raw, cred)
+
+    async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
+        url = f"{_ORDERS_URL}/{quote(platform_order_id, safe='')}"
+        _status, raw = await self.transport.request("GET", url, platform=self.platform)
+        return matching_order(_amazon_page(self, raw, cred), platform_order_id)
+
+    async def verify_webhook(self, *, body: bytes, headers: Mapping[str, str], callback_url: str) -> bool:
+        del headers, callback_url
+        try:
+            message = load_object(body, platform=self.platform)
+        except AdapterError:
+            return False
+        cert_url = message.get("SigningCertURL")
+        if not isinstance(cert_url, str) or not amazon_sns_host_allowed(cert_url):
+            return False
+        pem = await self.certs.load(cert_url)
+        if not pem:
+            return False
+        return verify_sns_signature(message, pem)
+
+    def parse_webhook(self, body: bytes) -> WebhookEvent:
+        return parse_amazon_webhook(body)
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)

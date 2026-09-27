@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
 from app.adapters.errors import AdapterError, RetryDecision, classify_platform_error
@@ -125,6 +127,31 @@ class InventoryUpdate:
     available: int
 
 
+class WebhookKind(StrEnum):
+    """平台推送收成的事件。取值与 PRD 10.5 的路由名一致。"""
+
+    ORDER_STATUS_CHANGED = "order.status_changed"
+    ORDER_CREATED = "order.created"
+    INVENTORY_CHANGED = "inventory.changed"
+    MESSAGE_CREATED = "message.created"
+    SUBSCRIPTION_CONFIRM = "subscription.confirm"
+    IGNORED = "ignored"
+
+
+@dataclass(frozen=True, slots=True)
+class WebhookEvent:
+    """验签通过之后的统一推送。原始报文留在 ``raw``，业务层不猜平台字段。"""
+
+    platform: str
+    event_id: str
+    kind: str
+    platform_shop_id: str
+    platform_order_id: str | None = None
+    platform_status: str | None = None
+    occurred_at: datetime | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
 class PlatformAdapter(ABC):
     """四平台共用的认证与拉取契约。"""
 
@@ -154,6 +181,24 @@ class PlatformAdapter(ABC):
 
     @abstractmethod
     def status_mapping(self) -> dict[str, str]: ...
+
+    @abstractmethod
+    async def verify_webhook(
+        self,
+        *,
+        body: bytes,
+        headers: Mapping[str, str],
+        callback_url: str,
+    ) -> bool:
+        """先验签。失败时调用方丢弃报文，不解析、不入库。"""
+
+    @abstractmethod
+    def parse_webhook(self, body: bytes) -> WebhookEvent:
+        """只在验签通过后调用。"""
+
+    async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
+        """按平台订单号拉详情。推送里通常没有金额，不能凭空补。"""
+        raise self._later("M2", cred)
 
     async def fetch_products(self, cred: CredentialView, *, cursor: str | None = None) -> PageResult[UnifiedProduct]:
         raise self._later("M3", cred)
@@ -214,4 +259,6 @@ __all__ = [
     "UnifiedOrder",
     "UnifiedOrderItem",
     "UnifiedProduct",
+    "WebhookEvent",
+    "WebhookKind",
 ]

@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
             {"name": "成员与权限", "description": "成员邀请、角色和数据范围"},
             {"name": "审计", "description": "不可篡改的敏感操作审计日志"},
             {"name": "店铺授权", "description": "四平台授权、店铺健康度与同步任务"},
+            {"name": "平台 Webhook", "description": "验签后立即受理，异步入库"},
         ],
     )
 

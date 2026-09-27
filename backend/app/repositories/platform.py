@@ -6,6 +6,8 @@ from datetime import datetime
 
 from sqlalchemy import func, select
 
+from app.db.tenant_filter import SKIP_FLAG
+from app.models.enums import ShopStatus
 from app.models.platform import PlatformApiLog, Shop, ShopCredential, SyncTask
 from app.repositories.base import BaseRepository
 
@@ -27,6 +29,22 @@ class ShopRepository(BaseRepository[Shop]):
             Shop.platform_shop_id == platform_shop_id,
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_active_identities(self, *, platform_code: str, platform_shop_id: str) -> list[tuple[int, int]]:
+        """跨租户找出仍在授权中的店铺。只给 Webhook 入站用，语句显式跳过租户过滤。"""
+        stmt = (
+            select(Shop.tenant_id, Shop.id)
+            .where(
+                Shop.platform_code == platform_code,
+                Shop.platform_shop_id == platform_shop_id,
+                Shop.deleted_at.is_(None),
+                Shop.status == int(ShopStatus.ACTIVE),
+            )
+            .limit(2)
+            .execution_options(**{SKIP_FLAG: True})
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [(int(tenant_id), int(shop_id)) for tenant_id, shop_id in rows]
 
 
 class ShopCredentialRepository(BaseRepository[ShopCredential]):

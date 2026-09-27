@@ -146,3 +146,56 @@ def scan_dead_letter() -> dict[str, Any]:
     """死信队列巡检：有任务待重放就告警。dlq 本身不自动消费。"""
     configure_logging()
     return asyncio.run(run_beat_singleton(BEAT_SCAN_DEAD_LETTER, _scan_dead_letter_impl))
+
+
+@celery_app.task(name="sync.webhook_event", bind=True, max_retries=3)
+def webhook_event(self: Any, platform: str, body: str, event_id: str, kind: str = "") -> dict[str, Any]:
+    """处理一条已验签的平台推送。``platform`` 决定进哪个平台队列。"""
+    configure_logging()
+    from app.services.webhook_dispatch import WebhookProcessError, dispatch_webhook_body
+
+    try:
+        return asyncio.run(dispatch_webhook_body(platform=platform, body=body.encode()))
+    except WebhookProcessError as exc:
+        if exc.retryable:
+            _retry_webhook(self, platform=platform, body=body, event_id=event_id, kind=kind, error=str(exc))
+        else:
+            asyncio.run(_park_webhook(platform=platform, body=body, event_id=event_id, kind=kind, error=str(exc)))
+        return {"status": "failed", "error": str(exc)}
+
+
+def _retry_webhook(task: Any, *, platform: str, body: str, event_id: str, kind: str, error: str) -> None:
+    from celery.exceptions import MaxRetriesExceededError
+
+    from app.adapters.errors import RetryDecision
+    from app.sync_engine.resilience import RetryAction, plan_retry
+    from app.sync_engine.runtime import get_policy
+
+    plan = plan_retry(
+        RetryDecision.RETRY,
+        retry_attempt=int(getattr(task.request, "retries", 0) or 0),
+        refresh_attempted=False,
+        policy=get_policy(),
+    )
+    if plan.action is not RetryAction.RETRY:
+        asyncio.run(_park_webhook(platform=platform, body=body, event_id=event_id, kind=kind, error=error))
+        return
+    try:
+        raise task.retry(countdown=plan.delay_seconds)
+    except MaxRetriesExceededError:
+        asyncio.run(_park_webhook(platform=platform, body=body, event_id=event_id, kind=kind, error=error))
+
+
+async def _park_webhook(*, platform: str, body: str, event_id: str, kind: str, error: str) -> None:
+    from app.services.webhook_ingress import dead_letter_for_task
+    from app.sync_engine.runtime import get_dead_letter_queue
+
+    letter = dead_letter_for_task(
+        platform=platform,
+        body=body,
+        event_id=event_id,
+        kind=kind,
+        error=error,
+        tenant_id=0,
+    )
+    await get_dead_letter_queue().push(letter)

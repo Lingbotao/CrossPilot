@@ -24,6 +24,14 @@ from app.sync_engine.resilience import (
     encode_circuit,
 )
 from app.sync_engine.state_store import JsonStateStore, MemoryJsonKv, RedisJsonKv
+from app.webhooks.store import (
+    EventDedup,
+    MemoryEventDedup,
+    MemoryWebhookLimiter,
+    RedisEventDedup,
+    RedisWebhookLimiter,
+    WebhookLimiter,
+)
 
 log = get_logger(__name__)
 
@@ -33,17 +41,21 @@ _breaker: CircuitBreaker | None = None
 _bloom: BloomFilter | None = None
 _lock: BeatLock | None = None
 _dlq: DeadLetterQueue | None = None
+_webhook_dedup: EventDedup | None = None
+_webhook_limiter: WebhookLimiter | None = None
 
 
 def reset_runtime() -> None:
     """测试隔离：丢掉已经装配的单例。"""
-    global _policy, _limiter, _breaker, _bloom, _lock, _dlq
+    global _policy, _limiter, _breaker, _bloom, _lock, _dlq, _webhook_dedup, _webhook_limiter
     _policy = None
     _limiter = None
     _breaker = None
     _bloom = None
     _lock = None
     _dlq = None
+    _webhook_dedup = None
+    _webhook_limiter = None
 
 
 def get_policy() -> SyncPolicy:
@@ -100,6 +112,20 @@ def get_beat_lock() -> BeatLock:
     return _lock
 
 
+def get_webhook_dedup() -> EventDedup:
+    global _webhook_dedup
+    if _webhook_dedup is None:
+        _webhook_dedup = MemoryEventDedup() if settings.is_test else RedisEventDedup(settings.redis_url)
+    return _webhook_dedup
+
+
+def get_webhook_limiter() -> WebhookLimiter:
+    global _webhook_limiter
+    if _webhook_limiter is None:
+        _webhook_limiter = MemoryWebhookLimiter() if settings.is_test else RedisWebhookLimiter(settings.redis_url)
+    return _webhook_limiter
+
+
 def get_dead_letter_queue() -> DeadLetterQueue:
     global _dlq
     if _dlq is None:
@@ -143,6 +169,8 @@ __all__ = [
     "get_dead_letter_queue",
     "get_policy",
     "get_rate_limiter",
+    "get_webhook_dedup",
+    "get_webhook_limiter",
     "reset_runtime",
     "run_beat_singleton",
 ]

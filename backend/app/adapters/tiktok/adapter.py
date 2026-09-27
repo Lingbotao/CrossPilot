@@ -3,22 +3,35 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
-from app.adapters.base import CredentialView, PageResult, PlatformAdapter, RateLimitSpec, TokenBundle, UnifiedOrder
+from app.adapters.base import (
+    CredentialView,
+    PageResult,
+    PlatformAdapter,
+    RateLimitSpec,
+    TokenBundle,
+    UnifiedOrder,
+    WebhookEvent,
+    WebhookKind,
+)
 from app.adapters.credentials import app_credentials
 from app.adapters.oauth_parse import tiktok_order, token_bundle
 from app.adapters.quotas import quota_for
-from app.adapters.signing import tiktok_sign
+from app.adapters.signing import signatures_match, tiktok_push_sign, tiktok_sign
 from app.adapters.transport import PlatformTransport, default_transport
+from app.adapters.webhook_common import coalesce_id, header_value, load_object, matching_order, nested_dict, unix_time
 
 _AUTH_HOST = "https://auth.tiktok-shops.com"
 _API_HOST = "https://open-api.tiktokglobalshop.com"
 _TOKEN_PATH = "/api/v2/token/get"
 _REFRESH_PATH = "/api/v2/token/refresh"
 _ORDER_PATH = "/order/202309/orders/search"
+_ORDER_DETAIL_PATH = "/order/202309/orders"
+_PUSH_ORDER = 1
 
 
 class TikTokAdapter(PlatformAdapter):
@@ -106,6 +119,48 @@ class TikTokAdapter(PlatformAdapter):
             platform=self.platform,
         )
         return _tiktok_page(self, raw, cred)
+
+    async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
+        app_key, secret = app_credentials(self.platform)
+        params = {"app_key": app_key, "timestamp": str(int(time.time())), "ids": platform_order_id}
+        params["sign"] = tiktok_sign(app_secret=secret, path=_ORDER_DETAIL_PATH, params=params)
+        _status, raw = await self.transport.request(
+            "GET",
+            f"{_API_HOST}{_ORDER_DETAIL_PATH}",
+            params=params,
+            platform=self.platform,
+        )
+        return matching_order(_tiktok_page(self, raw, cred), platform_order_id)
+
+    async def verify_webhook(self, *, body: bytes, headers: Mapping[str, str], callback_url: str) -> bool:
+        del callback_url
+        app_key, secret = app_credentials(self.platform)
+        expected = tiktok_push_sign(app_secret=secret, app_key=app_key, body=body)
+        return signatures_match(expected, header_value(headers, "authorization"))
+
+    def parse_webhook(self, body: bytes) -> WebhookEvent:
+        payload = load_object(body, platform=self.platform)
+        data = nested_dict(payload, "data")
+        shop_id = str(payload.get("shop_id") or "")
+        order_id = str(data.get("order_id") or "")
+        status = str(data.get("order_status") or "")
+        try:
+            event_type = int(payload.get("type") or 0)
+        except (TypeError, ValueError):
+            event_type = 0
+        kind = WebhookKind.IGNORED.value
+        if event_type == _PUSH_ORDER:
+            kind = WebhookKind.ORDER_CREATED.value if status == "UNPAID" else WebhookKind.ORDER_STATUS_CHANGED.value
+        return WebhookEvent(
+            platform=self.platform,
+            event_id=coalesce_id("tiktok", payload.get("tts_notification_id"), shop_id, order_id, status),
+            kind=kind,
+            platform_shop_id=shop_id,
+            platform_order_id=order_id or None,
+            platform_status=status or None,
+            occurred_at=unix_time(data.get("update_time") or payload.get("timestamp")),
+            raw=payload,
+        )
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)

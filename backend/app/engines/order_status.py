@@ -27,7 +27,7 @@ class UnifiedStatus(StrEnum):
 
 
 class StatusChangeSource(StrEnum):
-    """状态从哪来。F4-13：系统 / 手工；Webhook 留给 M2-07。"""
+    """状态从哪来。F4-13：轮询、Webhook、人工。"""
 
     SYSTEM = "SYSTEM"
     WEBHOOK = "WEBHOOK"

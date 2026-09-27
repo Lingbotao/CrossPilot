@@ -27,6 +27,30 @@ def tiktok_sign(*, app_secret: str, path: str, params: dict[str, str]) -> str:
     return hmac.new(app_secret.encode(), base.encode(), hashlib.sha256).hexdigest()
 
 
+def shopee_push_sign(*, partner_key: str, url: str, body: bytes) -> str:
+    """Shopee Push：HMAC-SHA256(partner_key, callback_url + '|' + 原始报文)。"""
+    base = url.encode() + b"|" + body
+    return hmac.new(partner_key.encode(), base, hashlib.sha256).hexdigest()
+
+
+def lazada_push_sign(*, app_secret: str, body: bytes) -> str:
+    """Lazada Push：HMAC-SHA256(app_secret, 原始报文)。"""
+    return hmac.new(app_secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+def tiktok_push_sign(*, app_secret: str, app_key: str, body: bytes) -> str:
+    """TikTok Shop Webhook：HMAC-SHA256(app_secret, app_key + 原始报文)。"""
+    return hmac.new(app_secret.encode(), app_key.encode() + body, hashlib.sha256).hexdigest()
+
+
+def signatures_match(expected: str, provided: str) -> bool:
+    left = expected.strip().lower().encode()
+    right = provided.strip().lower().encode()
+    if not left or len(left) != len(right):
+        return False
+    return hmac.compare_digest(left, right)
+
+
 def amazon_consent_url(*, host: str, application_id: str, redirect_uri: str, state: str) -> str:
     return (
         f"{host}/apps/authorize/consent"
@@ -37,4 +61,13 @@ def amazon_consent_url(*, host: str, application_id: str, redirect_uri: str, sta
     )
 
 
-__all__ = ["amazon_consent_url", "lazada_sign", "shopee_sign", "tiktok_sign"]
+__all__ = [
+    "amazon_consent_url",
+    "lazada_push_sign",
+    "lazada_sign",
+    "shopee_push_sign",
+    "shopee_sign",
+    "signatures_match",
+    "tiktok_push_sign",
+    "tiktok_sign",
+]
