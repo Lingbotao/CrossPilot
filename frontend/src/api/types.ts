@@ -461,3 +461,137 @@ export interface OrderStatusLog {
   remark: string | null;
   created_at: string;
 }
+
+/** ---------- M2 订单工作台 ---------- */
+
+export type LabelSize = 'A6' | '100x150';
+
+export interface OrderListItem {
+  id: string;
+  shop_id: string;
+  shop_name: string;
+  site_code: string;
+  platform_code: string;
+  platform_order_id: string;
+  unified_status: UnifiedStatusValue;
+  platform_status: string;
+  currency: string;
+  total_amount: string;
+  paid_at: string | null;
+  created_at: string;
+  buyer_name: string | null;
+  shipment_status: string | null;
+  failure_reason: string | null;
+}
+
+export interface OrderParty {
+  name: string | null;
+  phone: string | null;
+  country: string | null;
+}
+
+export interface OrderAddress extends OrderParty {
+  state: string | null;
+  city: string | null;
+  line1: string | null;
+  postal_code: string | null;
+}
+
+export interface OrderLineItem {
+  id: string;
+  platform_sku_id: string;
+  platform_product_id: string;
+  item_name: string;
+  quantity: number;
+  unit_price: string;
+  currency: string;
+}
+
+export interface OrderFeeLine {
+  id: string;
+  fee_type: string;
+  amount: string;
+  currency: string;
+  source: string;
+}
+
+export interface OrderShipment {
+  carrier: string | null;
+  tracking_no: string | null;
+  status: string | null;
+  failure_reason: string | null;
+  attempt: number | null;
+  shipped_at: string | null;
+}
+
+export interface OrderTimelineEntry {
+  id: string;
+  from_status: UnifiedStatusValue | null;
+  to_status: UnifiedStatusValue;
+  platform_status: string;
+  operator_id: string | null;
+  source: StatusChangeSource;
+  remark: string | null;
+  created_at: string;
+}
+
+export interface OrderDetail extends OrderListItem {
+  item_amount: string;
+  shipping_amount: string;
+  tax_amount: string;
+  discount_amount: string;
+  shipped_at: string | null;
+  buyer: OrderParty;
+  ship_to: OrderAddress;
+  items: OrderLineItem[];
+  fees: OrderFeeLine[];
+  shipment: OrderShipment;
+  timeline: OrderTimelineEntry[];
+  tracking_no: string | null;
+  carrier: string | null;
+}
+
+export interface OrderListQuery {
+  cursor?: string | null;
+  limit?: number;
+  platform_code?: string;
+  shop_id?: string;
+  site_code?: string;
+  unified_status?: string;
+  created_from?: string;
+  created_to?: string;
+  amount_min?: string;
+  amount_max?: string;
+  sku?: string;
+  q?: string;
+  fields?: string;
+}
+
+export interface ShipItemResult {
+  order_id: string;
+  platform_order_id: string;
+  ok: boolean;
+  tracking_no: string | null;
+  message: string;
+}
+
+export interface BatchShipResult {
+  succeeded: number;
+  failed: number;
+  results: ShipItemResult[];
+}
+
+export interface LabelSkip {
+  order_id: string;
+  platform_order_id: string | null;
+  message: string;
+}
+
+export interface FilePayload {
+  filename: string;
+  content_type: string;
+  content_base64: string;
+  row_count: number;
+  truncated: boolean;
+  skipped: LabelSkip[];
+}

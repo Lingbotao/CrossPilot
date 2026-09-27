@@ -1,8 +1,11 @@
 """订单域（PRD 9.2 ④）。
 
-``sales_order``、``order_item``、``order_status_log`` 都是流水，禁止软删除。
+``sales_order``、``order_item``、``order_status_log``、``order_fee`` 都是流水，禁止软删除。
+``shipment`` 按订单覆盖最新一次发货结果，同样不软删除。
 ``unified_status`` 只允许九态文案（见 ``app.engines.order_status``）。
 ``order_item`` 与 ``order_status_log`` 按月分区，主键包含 ``created_at``。
+
+列表覆盖索引、买家名 trigram、手机号后四位表达式索引写在迁移 ``0007`` 里。
 """
 
 from __future__ import annotations
@@ -33,6 +36,8 @@ from app.db.snowflake import next_snowflake_id
 from app.engines.order_status import UNIFIED_STATUS_SQL
 
 ORDER_MODULE = "order"
+SHIPMENT_SUCCEEDED = "SUCCEEDED"
+SHIPMENT_FAILED = "FAILED"
 
 
 class SalesOrder(Base, PKMixin, TenantMixin, AuditMixin):
@@ -68,6 +73,14 @@ class SalesOrder(Base, PKMixin, TenantMixin, AuditMixin):
         ),
         Index("ix_sales_order_tenant_id_unified_status_created_at", "tenant_id", "unified_status", "created_at"),
         Index("ix_sales_order_tenant_id_shop_id_created_at", "tenant_id", "shop_id", "created_at"),
+        Index(
+            "ix_sales_order_list_cover",
+            "tenant_id",
+            "unified_status",
+            "created_at",
+            "id",
+            postgresql_include=["shop_id", "platform_code", "platform_order_id", "currency", "total_amount"],
+        ),
     )
 
 
@@ -96,6 +109,7 @@ class OrderItem(Base, TenantMixin):
     __table_args__ = (
         PrimaryKeyConstraint("id", "created_at", name="pk_order_item"),
         Index("ix_order_item_tenant_id_order_id", "tenant_id", "order_id"),
+        Index("ix_order_item_tenant_id_platform_sku_id", "tenant_id", "platform_sku_id"),
         {"postgresql_partition_by": "RANGE (created_at)"},
     )
 
@@ -149,4 +163,54 @@ class ShopSyncCursor(Base, PKMixin, TenantMixin, AuditMixin):
     )
 
 
-__all__ = ["ORDER_MODULE", "OrderItem", "OrderStatusLog", "SalesOrder", "ShopSyncCursor"]
+class Shipment(Base, PKMixin, TenantMixin, AuditMixin):
+    """发货单。一个订单一行，失败重试时覆盖，不另开流水。"""
+
+    __tablename__ = "shipment"
+
+    order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sales_order.id"), nullable=False)
+    carrier: Mapped[str] = mapped_column(String(64), nullable=False)
+    tracking_no: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "order_id", name="uq_shipment_tenant_id_order_id"),
+        CheckConstraint(
+            f"status IN ('{SHIPMENT_SUCCEEDED}', '{SHIPMENT_FAILED}')",
+            name="status",
+        ),
+        Index("ix_shipment_tenant_id_status", "tenant_id", "status"),
+    )
+
+
+class OrderFee(Base, PKMixin, TenantMixin, AuditMixin):
+    """订单费用行。同步时整单替换，主单不软删。"""
+
+    __tablename__ = "order_fee"
+
+    order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sales_order.id"), nullable=False)
+    fee_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="platform")
+
+    __table_args__ = (
+        CheckConstraint("source IN ('platform', 'system')", name="source"),
+        Index("ix_order_fee_tenant_id_order_id", "tenant_id", "order_id"),
+    )
+
+
+__all__ = [
+    "ORDER_MODULE",
+    "SHIPMENT_FAILED",
+    "SHIPMENT_SUCCEEDED",
+    "OrderFee",
+    "OrderItem",
+    "OrderStatusLog",
+    "SalesOrder",
+    "Shipment",
+    "ShopSyncCursor",
+]

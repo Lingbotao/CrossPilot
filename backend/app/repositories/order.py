@@ -10,8 +10,9 @@ from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 
 from app.adapters.base import UnifiedOrder
+from app.engines.order_privacy import phone_last4
 from app.engines.order_status import DecisionKind, StatusDecision
-from app.models.order import ORDER_MODULE, OrderItem, OrderStatusLog, SalesOrder, ShopSyncCursor
+from app.models.order import ORDER_MODULE, OrderFee, OrderItem, OrderStatusLog, SalesOrder, ShopSyncCursor
 from app.models.platform import Shop
 from app.repositories.base import BaseRepository
 from app.sync_engine.cursor import CursorCheckpoint
@@ -60,11 +61,11 @@ class SalesOrderRepository(BaseRepository[SalesOrder]):
                     row = _new_order(shop, order, key, decision)
                     self.session.add(row)
                     await self.session.flush()
-                    await self._replace_items(row, order)
+                    await self._replace_children(row, order)
                     return WriteAction.INSERT, decision
                 decision = resolve(existing.unified_status)
                 _apply_status(existing, order, decision)
-                await self._replace_items(existing, order)
+                await self._replace_children(existing, order)
                 await self.session.flush()
                 return WriteAction.UPDATE, decision
         except IntegrityError:
@@ -75,9 +76,13 @@ class SalesOrderRepository(BaseRepository[SalesOrder]):
                 return WriteAction.SKIP, None
             decision = resolve(raced.unified_status)
             _apply_status(raced, order, decision)
-            await self._replace_items(raced, order)
+            await self._replace_children(raced, order)
             await self.session.flush()
             return WriteAction.UPDATE, decision
+
+    async def _replace_children(self, row: SalesOrder, order: UnifiedOrder) -> None:
+        await self._replace_items(row, order)
+        await self._replace_fees(row, order)
 
     async def _replace_items(self, row: SalesOrder, order: UnifiedOrder) -> None:
         await self.session.execute(
@@ -96,6 +101,23 @@ class SalesOrderRepository(BaseRepository[SalesOrder]):
                     quantity=item.quantity,
                     unit_price=_money(item.unit_price),
                     currency=row.currency,
+                )
+            )
+        await self.session.flush()
+
+    async def _replace_fees(self, row: SalesOrder, order: UnifiedOrder) -> None:
+        await self.session.execute(
+            delete(OrderFee).where(OrderFee.tenant_id == row.tenant_id, OrderFee.order_id == row.id)
+        )
+        for fee in order.fees:
+            self.session.add(
+                OrderFee(
+                    tenant_id=row.tenant_id,
+                    order_id=row.id,
+                    fee_type=fee.fee_type[:32],
+                    amount=_money(fee.amount),
+                    currency=fee.currency[:3],
+                    source=(fee.source or "platform")[:32],
                 )
             )
         await self.session.flush()
@@ -186,13 +208,29 @@ def _buyer(order: UnifiedOrder) -> dict[str, str] | None:
         payload["name"] = order.buyer_name
     if order.buyer_country:
         payload["country"] = order.buyer_country
+    if order.buyer_phone:
+        payload["phone"] = order.buyer_phone
+        last4 = phone_last4(order.buyer_phone)
+        if last4:
+            payload["phone_last4"] = last4
     return payload or None
 
 
 def _ship_to(order: UnifiedOrder) -> dict[str, str] | None:
-    if not order.buyer_country:
-        return None
-    return {"country": order.buyer_country}
+    payload: dict[str, str] = {}
+    if order.buyer_country:
+        payload["country"] = order.buyer_country
+    if order.ship_state:
+        payload["state"] = order.ship_state
+    if order.ship_city:
+        payload["city"] = order.ship_city
+    if order.ship_line1:
+        payload["line1"] = order.ship_line1
+    if order.ship_postal:
+        payload["postal_code"] = order.ship_postal
+    if order.buyer_phone:
+        payload["phone"] = order.buyer_phone
+    return payload or None
 
 
 def _new_order(shop: Shop, order: UnifiedOrder, key: str, decision: StatusDecision) -> SalesOrder:

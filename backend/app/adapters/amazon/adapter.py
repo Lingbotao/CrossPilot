@@ -27,6 +27,7 @@ from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError
 from app.adapters.oauth_parse import amazon_order, token_bundle
 from app.adapters.quotas import quota_for
+from app.adapters.shipping import post_shipment
 from app.adapters.signing import amazon_consent_url
 from app.adapters.sites import AMAZON_CONSENT_HOST, AMAZON_REGION
 from app.adapters.transport import PlatformTransport, default_transport
@@ -128,6 +129,17 @@ class AmazonAdapter(PlatformAdapter):
 
     def parse_webhook(self, body: bytes) -> WebhookEvent:
         return parse_amazon_webhook(body)
+
+    async def ship_order(self, cred: CredentialView, order_id: str, carrier: str, tracking_no: str) -> None:
+        url = f"{_ORDERS_URL}/{quote(order_id, safe='')}/ship_order"
+        await post_shipment(
+            self.transport,
+            cred,
+            url=url,
+            platform_order_id=order_id,
+            carrier=carrier,
+            tracking_no=tracking_no,
+        )
 
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)

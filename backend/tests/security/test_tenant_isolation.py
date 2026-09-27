@@ -7,7 +7,8 @@ PRD 13.2 第 4 条：**每个新增租户表都必须同步补越权用例**。
 本地没有 Docker / PostgreSQL 时整个文件会被跳过（不会失败）；
 CI 与 `docker compose up` 之后用 ``make test-security`` 跑。
 
-订单表 ``sales_order`` 与状态日志 ``order_status_log`` 有单独用例：租户 A 看不到租户 B 的行。
+订单表 ``sales_order``、状态日志 ``order_status_log``、发货单 ``shipment`` 与费用 ``order_fee``
+有单独用例：租户 A 看不到租户 B 的行。
 """
 
 from __future__ import annotations
@@ -581,3 +582,90 @@ class TestOrderStatusLogIsolation:
         assert _run(_visible(TENANT_B)) == {log_b}
         with pytest.raises(Exception):  # noqa: B017 - 状态日志只追加，应用角色没有 DELETE
             _run(_delete_log())
+
+    def test_tenant_cannot_read_another_tenants_shipment_or_fee(self, migrated: None) -> None:
+        shop_a = 960000000000000000 + time.time_ns() % 10**12
+        shop_b = shop_a + 1
+        order_a = shop_a + 2
+        order_b = shop_a + 3
+        ship_a = shop_a + 4
+        ship_b = shop_a + 5
+        fee_a = shop_a + 6
+        fee_b = shop_a + 7
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', 'ship', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"seller-{shop_id}"},
+                    )
+                for order_id, tenant_id, shop_id in ((order_a, TENANT_A, shop_a), (order_b, TENANT_B, shop_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sales_order ("
+                            "id, tenant_id, shop_id, platform_code, platform_order_id, idempotency_key, "
+                            "platform_status, unified_status, currency, item_amount, shipping_amount, "
+                            "tax_amount, discount_amount, total_amount"
+                            ") VALUES ("
+                            ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'PAID', 'SGD', "
+                            "1, 0, 0, 0, 1)"
+                        ),
+                        {
+                            "id": order_id,
+                            "tid": tenant_id,
+                            "shop": shop_id,
+                            "pid": f"S-{order_id}",
+                            "key": f"shopee:{shop_id}:S-{order_id}",
+                        },
+                    )
+                for ship_id, tenant_id, order_id in ((ship_a, TENANT_A, order_a), (ship_b, TENANT_B, order_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shipment (id, tenant_id, order_id, carrier, tracking_no, status, attempt) "
+                            "VALUES (:id, :tid, :order, 'Shopee', 'CP1', 'SUCCEEDED', 1)"
+                        ),
+                        {"id": ship_id, "tid": tenant_id, "order": order_id},
+                    )
+                for fee_id, tenant_id, order_id in ((fee_a, TENANT_A, order_a), (fee_b, TENANT_B, order_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO order_fee (id, tenant_id, order_id, fee_type, amount, currency, source) "
+                            "VALUES (:id, :tid, :order, 'COMMISSION', 1.5, 'SGD', 'platform')"
+                        ),
+                        {"id": fee_id, "tid": tenant_id, "order": order_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_shipment() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM shipment WHERE id = :id"), {"id": ship_a})
+                await session.commit()
+            await engine.dispose()
+
+        ship_sql = "SELECT id FROM shipment WHERE id IN (:a, :b)"
+        fee_sql = "SELECT id FROM order_fee WHERE id IN (:a, :b)"
+        _run(_seed())
+        assert _run(_visible(ship_sql, TENANT_A, ship_a, ship_b)) == {ship_a}
+        assert _run(_visible(ship_sql, TENANT_B, ship_a, ship_b)) == {ship_b}
+        assert _run(_visible(fee_sql, TENANT_A, fee_a, fee_b)) == {fee_a}
+        assert _run(_visible(fee_sql, TENANT_B, fee_a, fee_b)) == {fee_b}
+        with pytest.raises(Exception):  # noqa: B017 - 发货单不给应用角色 DELETE
+            _run(_delete_shipment())

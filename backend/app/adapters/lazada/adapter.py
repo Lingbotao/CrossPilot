@@ -19,8 +19,10 @@ from app.adapters.base import (
     WebhookKind,
 )
 from app.adapters.credentials import app_credentials
+from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.oauth_parse import lazada_order, token_bundle
 from app.adapters.quotas import quota_for
+from app.adapters.shipping import post_shipment
 from app.adapters.signing import lazada_push_sign, lazada_sign, signatures_match
 from app.adapters.sites import LAZADA_AUTH_HOST
 from app.adapters.transport import PlatformTransport, default_transport
@@ -184,6 +186,23 @@ class LazadaAdapter(PlatformAdapter):
             platform_status=status or None,
             occurred_at=unix_time(data.get("status_update_time") or payload.get("timestamp")),
             raw=payload,
+        )
+
+    async def ship_order(self, cred: CredentialView, order_id: str, carrier: str, tracking_no: str) -> None:
+        host = LAZADA_AUTH_HOST.get(cred.site_code.upper())
+        if host is None:
+            raise AdapterError(
+                "站点不支持发货回传",
+                platform=self.platform,
+                decision=RetryDecision.FAIL_FAST,
+            )
+        await post_shipment(
+            self.transport,
+            cred,
+            url=f"{host}/order/ship_order",
+            platform_order_id=order_id,
+            carrier=carrier,
+            tracking_no=tracking_no,
         )
 
     def rate_limit(self) -> RateLimitSpec:

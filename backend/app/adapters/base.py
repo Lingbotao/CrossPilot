@@ -30,6 +30,16 @@ class UnifiedOrderItem:
 
 
 @dataclass(frozen=True, slots=True)
+class UnifiedFee:
+    """平台给出的费用行。没有报文就不编造。"""
+
+    fee_type: str
+    amount: Decimal
+    currency: str
+    source: str = "platform"
+
+
+@dataclass(frozen=True, slots=True)
 class UnifiedOrder:
     platform: str
     shop_id: str
@@ -44,6 +54,12 @@ class UnifiedOrder:
     paid_at: datetime | None
     updated_at: datetime
     raw: dict[str, Any]
+    buyer_phone: str | None = None
+    ship_state: str | None = None
+    ship_city: str | None = None
+    ship_line1: str | None = None
+    ship_postal: str | None = None
+    fees: tuple[UnifiedFee, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,6 +271,7 @@ __all__ = [
     "PublishResult",
     "RateLimitSpec",
     "TokenBundle",
+    "UnifiedFee",
     "UnifiedInventory",
     "UnifiedOrder",
     "UnifiedOrderItem",

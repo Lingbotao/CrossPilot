@@ -98,7 +98,9 @@ def test_after_sales_edges() -> None:
     assert cancel_done.kind is DecisionKind.REJECT
     paid_return = decide_status(UnifiedStatus.PAID, UnifiedStatus.RETURNED, source=StatusChangeSource.SYSTEM)
     assert paid_return.kind is DecisionKind.REJECT
-    refund_back_to_ship = decide_status(UnifiedStatus.REFUNDING, UnifiedStatus.SHIPPED, source=StatusChangeSource.SYSTEM)
+    refund_back_to_ship = decide_status(
+        UnifiedStatus.REFUNDING, UnifiedStatus.SHIPPED, source=StatusChangeSource.SYSTEM
+    )
     assert refund_back_to_ship.kind is DecisionKind.REJECT
 
 

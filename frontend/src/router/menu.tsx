@@ -23,6 +23,7 @@ import type { ComponentType, ReactNode } from 'react';
 import { Perm, type PermValue } from '@/api/types';
 import zhCN from '@/i18n/zh-CN';
 import { DashboardPage } from '@/pages/DashboardPage';
+import { OrdersPage } from '@/pages/orders/OrdersPage';
 import { ShopsPage } from '@/pages/shops/ShopsPage';
 import { AuditPage } from '@/pages/system/AuditPage';
 import { MembersPage } from '@/pages/system/MembersPage';
@@ -69,7 +70,8 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     icon: <ShoppingCartOutlined />,
     permission: Perm.ORDER_READ,
     milestone: 'M2（Week 4–5）',
-    delivered: false,
+    delivered: true,
+    component: OrdersPage,
   },
   {
     key: 'products',

@@ -21,6 +21,7 @@ from app.adapters.base import (
 from app.adapters.credentials import app_credentials
 from app.adapters.oauth_parse import shopee_order, token_bundle
 from app.adapters.quotas import quota_for
+from app.adapters.shipping import post_shipment
 from app.adapters.signing import shopee_push_sign, shopee_sign, signatures_match
 from app.adapters.transport import PlatformTransport, default_transport
 from app.adapters.webhook_common import coalesce_id, header_value, load_object, matching_order, nested_dict, unix_time
@@ -158,6 +159,16 @@ class ShopeeAdapter(PlatformAdapter):
             platform_status=status or None,
             occurred_at=updated,
             raw=payload,
+        )
+
+    async def ship_order(self, cred: CredentialView, order_id: str, carrier: str, tracking_no: str) -> None:
+        await post_shipment(
+            self.transport,
+            cred,
+            url=f"{_HOST}/api/v2/logistics/ship_order",
+            platform_order_id=order_id,
+            carrier=carrier,
+            tracking_no=tracking_no,
         )
 
     def rate_limit(self) -> RateLimitSpec:

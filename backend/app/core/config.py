@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     webhook_max_body_bytes: int = 1_048_576
     webhook_source_cidrs: str = ""
     webhook_public_base_url: str = ""
+    # 订单工作台（F4-02/05/11）。批量与导出上限走配置，业务代码不写死 200。
+    order_batch_ship_limit: int = 200
+    order_export_max_rows: int = 5000
+    order_tracking_prefix: str = "CP"
 
     # ------------------------------------------------------------------ 对象存储
     s3_endpoint: str = "http://localhost:9000"

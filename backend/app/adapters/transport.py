@@ -53,6 +53,8 @@ class FixtureTransport:
         del method
         body = json_body or {}
         grant = body.get("grant_type") or (params or {}).get("grant_type")
+        if url.endswith("/ship_order") or url.rstrip("/").endswith("/shipment"):
+            return 200, {"accepted": True, "tracking_no": str(body.get("tracking_no") or "")}
         if "/orders" in url or "/order/" in url:
             page = load_json_fixture("orders.json")
             raw = page.get(platform)
