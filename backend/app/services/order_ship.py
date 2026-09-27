@@ -18,6 +18,7 @@ from app.adapters.registry import adapter_registry
 from app.core.config import settings
 from app.core.errors import AppError, ErrorCode, NotFoundError, ParamInvalidError
 from app.core.logging import get_logger
+from app.engines.order_desk import review_blocks_ship
 from app.engines.order_privacy import mask_party
 from app.engines.order_status import DecisionKind, StatusChangeSource, UnifiedStatus, decide_status, parse_unified
 from app.models.enums import AuditAction
@@ -45,6 +46,7 @@ class ShipTarget:
     platform_code: str = ""
     tenant_id: int = 0
     platform_status: str = ""
+    review_status: str = "AUTO_PASSED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +144,7 @@ async def _ship_one(
     target = await book.load(order_id)
     if target is None:
         return ShipLine(order_id, "", False, None, "订单不存在")
-    reason = refuse_ship(target.unified_status)
+    reason = refuse_ship(target.unified_status) or review_blocks_ship(target.review_status)
     if reason is not None:
         return ShipLine(target.order_id, target.platform_order_id, False, None, reason)
     attempt = target.attempt + 1
@@ -207,6 +209,7 @@ class DbShipBook:
             platform_code=order.platform_code,
             tenant_id=order.tenant_id,
             platform_status=order.platform_status,
+            review_status=order.review_status,
         )
 
     async def commit_success(

@@ -26,4 +26,22 @@ async def post_shipment(
     await transport.request("POST", url, json_body=body, platform=cred.platform)
 
 
-__all__ = ["post_shipment"]
+async def post_order_change(
+    transport: PlatformTransport,
+    cred: CredentialView,
+    *,
+    url: str,
+    platform_order_id: str,
+    fields: dict[str, object],
+) -> None:
+    """改址或备注。平台未确认时调用方不得改本地订单。"""
+
+    body = {
+        "platform_order_id": platform_order_id,
+        "access_token": cred.access_token,
+        **fields,
+    }
+    await transport.request("POST", url, json_body=body, platform=cred.platform)
+
+
+__all__ = ["post_order_change", "post_shipment"]

@@ -238,6 +238,12 @@ class PlatformAdapter(ABC):
     async def ship_order(self, cred: CredentialView, order_id: str, carrier: str, tracking_no: str) -> None:
         raise self._later("M2", cred)
 
+    async def update_address(self, cred: CredentialView, order_id: str, address: dict[str, str]) -> None:
+        raise self._later("M2", cred)
+
+    async def update_note(self, cred: CredentialView, order_id: str, content: str) -> None:
+        raise self._later("M2", cred)
+
     def normalize_error(self, exc: Exception) -> AdapterError:
         if isinstance(exc, AdapterError):
             return exc

@@ -22,6 +22,10 @@ class ShopRepository(BaseRepository[Shop]):
         rows = list((await self.session.execute(stmt)).scalars().all())
         return rows, total
 
+    async def list_open(self) -> list[Shop]:
+        stmt = self.base_select().order_by(Shop.id.asc())
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def find_active(self, *, platform_code: str, site_code: str, platform_shop_id: str) -> Shop | None:
         stmt = self.base_select().where(
             Shop.platform_code == platform_code,

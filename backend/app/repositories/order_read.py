@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 
-from sqlalchemy import Select, and_, exists, or_, select
+from sqlalchemy import Select, and_, case, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -31,6 +31,13 @@ class OrderListQuery:
     keyword: str | None = None
     before_created_at: datetime | None = None
     before_id: int | None = None
+    queue: str | None = None
+    exception_kind: str | None = None
+    sla_hours: int = 48
+    warn_hours: int = 4
+    as_of: datetime | None = None
+    before_rank: int | None = None
+    before_paid_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,8 +57,12 @@ class OrderReadRepository:
         self.session = session
 
     async def list_orders(self, query: OrderListQuery) -> list[OrderHit]:
-        stmt = self._select().order_by(SalesOrder.created_at.desc(), SalesOrder.id.desc()).limit(query.limit)
-        stmt = self._filter(stmt, query)
+        if query.queue == "to_ship":
+            rank = _ship_rank(query)
+            stmt = self._select().order_by(rank.asc(), SalesOrder.paid_at.asc().nulls_last(), SalesOrder.id.desc())
+        else:
+            stmt = self._select().order_by(SalesOrder.created_at.desc(), SalesOrder.id.desc())
+        stmt = self._filter(stmt, query).limit(query.limit)
         rows = (await self.session.execute(stmt)).all()
         return [_hit(row) for row in rows]  # row is a SQLAlchemy Row
 
@@ -61,6 +72,14 @@ class OrderReadRepository:
         if row is None:
             return None
         return _hit(row)
+
+    async def unmatched_order_ids(self, order_ids: list[int]) -> set[int]:
+        if not order_ids:
+            return set()
+        stmt = (
+            select(OrderItem.order_id).where(OrderItem.order_id.in_(order_ids), OrderItem.sku_id.is_(None)).distinct()
+        )
+        return {int(row) for row in (await self.session.execute(stmt)).scalars().all()}
 
     async def list_items(self, order_id: int) -> list[OrderItem]:
         stmt = select(OrderItem).where(OrderItem.order_id == order_id).order_by(OrderItem.id.asc())
@@ -109,7 +128,13 @@ class OrderReadRepository:
             stmt = stmt.where(_sku_exists(_contains(query.sku)))
         if query.keyword:
             stmt = stmt.where(_keyword(query.keyword))
-        if query.before_created_at is not None and query.before_id is not None:
+        if query.queue == "to_ship":
+            stmt = stmt.where(SalesOrder.unified_status == "PAID")
+            stmt = stmt.where(SalesOrder.review_status.in_(("AUTO_PASSED", "APPROVED")))
+            stmt = _deadline_page(stmt, query)
+        elif query.queue == "exception" or query.exception_kind:
+            stmt = stmt.where(_exception_clause(query))
+        if query.queue != "to_ship" and query.before_created_at is not None and query.before_id is not None:
             stmt = stmt.where(
                 or_(
                     SalesOrder.created_at < query.before_created_at,
@@ -117,6 +142,71 @@ class OrderReadRepository:
                 )
             )
         return stmt
+
+
+def _clock(query: OrderListQuery) -> datetime:
+    return query.as_of or datetime.now(UTC)
+
+
+def _ship_rank(query: OrderListQuery) -> Any:
+    now = _clock(query)
+    overdue_before = now - timedelta(hours=query.sla_hours)
+    soon_before = now - timedelta(hours=max(query.sla_hours - query.warn_hours, 0))
+    return case(
+        (and_(SalesOrder.paid_at.is_not(None), SalesOrder.paid_at <= overdue_before), 0),
+        (and_(SalesOrder.paid_at.is_not(None), SalesOrder.paid_at <= soon_before), 1),
+        else_=2,
+    )
+
+
+def _deadline_page(stmt: Select[Any], query: OrderListQuery) -> Select[Any]:
+    if query.before_rank is None or query.before_id is None:
+        return stmt
+    rank = _ship_rank(query)
+    paid = query.before_paid_at
+    same_rank = rank == query.before_rank
+    later = [rank > query.before_rank]
+    if paid is None:
+        later.append(and_(same_rank, SalesOrder.paid_at.is_(None), SalesOrder.id < query.before_id))
+    else:
+        later.append(and_(same_rank, SalesOrder.paid_at > paid))
+        later.append(and_(same_rank, SalesOrder.paid_at == paid, SalesOrder.id < query.before_id))
+        later.append(and_(same_rank, SalesOrder.paid_at.is_(None)))
+    return stmt.where(or_(*later))
+
+
+def _exception_clause(query: OrderListQuery) -> ColumnElement[bool]:
+    kind = query.exception_kind
+    now = _clock(query)
+    overdue_before = now - timedelta(hours=query.sla_hours)
+    soon_before = now - timedelta(hours=max(query.sla_hours - query.warn_hours, 0))
+    country = SalesOrder.ship_to["country"].astext
+    line1 = SalesOrder.ship_to["line1"].astext
+    city = SalesOrder.ship_to["city"].astext
+    parts: list[ColumnElement[bool]] = []
+    if kind in (None, "SKU_UNMATCHED"):
+        parts.append(
+            exists(select(OrderItem.id).where(OrderItem.order_id == SalesOrder.id, OrderItem.sku_id.is_(None)))
+        )
+    if kind in (None, "ADDRESS_INVALID"):
+        parts.append(
+            or_(
+                SalesOrder.ship_to.is_(None),
+                country.is_(None),
+                country == "",
+                and_(or_(line1.is_(None), line1 == ""), or_(city.is_(None), city == "")),
+            )
+        )
+    paid_open = and_(SalesOrder.unified_status == "PAID", SalesOrder.paid_at.is_not(None))
+    if kind == "SHIP_OVERDUE":
+        parts.append(and_(paid_open, SalesOrder.paid_at <= overdue_before))
+    elif kind == "SHIP_DUE_SOON":
+        parts.append(and_(paid_open, SalesOrder.paid_at <= soon_before, SalesOrder.paid_at > overdue_before))
+    elif kind is None:
+        parts.append(and_(paid_open, SalesOrder.paid_at <= soon_before))
+    if kind in (None, "REVIEW_PENDING"):
+        parts.append(SalesOrder.review_status == "PENDING")
+    return or_(*parts)
 
 
 class ShipmentRepository(BaseRepository[Shipment]):

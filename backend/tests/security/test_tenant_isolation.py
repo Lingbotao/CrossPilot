@@ -669,3 +669,93 @@ class TestOrderStatusLogIsolation:
         assert _run(_visible(fee_sql, TENANT_B, fee_a, fee_b)) == {fee_b}
         with pytest.raises(Exception):  # noqa: B017 - 发货单不给应用角色 DELETE
             _run(_delete_shipment())
+
+
+class TestOrderDeskIsolation:
+    def test_tenant_cannot_read_another_tenants_return_or_note(self, migrated: None) -> None:
+        shop_a = 970000000000000000 + time.time_ns() % 10**12
+        shop_b = shop_a + 1
+        order_a = shop_a + 2
+        order_b = shop_a + 3
+        note_a = shop_a + 4
+        note_b = shop_a + 5
+        ret_a = shop_a + 6
+        ret_b = shop_a + 7
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', 'desk', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"seller-{shop_id}"},
+                    )
+                for order_id, tenant_id, shop_id in ((order_a, TENANT_A, shop_a), (order_b, TENANT_B, shop_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sales_order ("
+                            "id, tenant_id, shop_id, platform_code, platform_order_id, idempotency_key, "
+                            "platform_status, unified_status, currency, item_amount, shipping_amount, "
+                            "tax_amount, discount_amount, total_amount"
+                            ") VALUES ("
+                            ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'PAID', 'SGD', "
+                            "1, 0, 0, 0, 1)"
+                        ),
+                        {
+                            "id": order_id,
+                            "tid": tenant_id,
+                            "shop": shop_id,
+                            "pid": f"R-{order_id}",
+                            "key": f"shopee:{shop_id}:R-{order_id}",
+                        },
+                    )
+                for note_id, tenant_id, order_id in ((note_a, TENANT_A, order_a), (note_b, TENANT_B, order_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO order_note (id, tenant_id, order_id, content) "
+                            "VALUES (:id, :tid, :order, 'note')"
+                        ),
+                        {"id": note_id, "tid": tenant_id, "order": order_id},
+                    )
+                for ret_id, tenant_id, order_id in ((ret_a, TENANT_A, order_a), (ret_b, TENANT_B, order_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO return_order ("
+                            "id, tenant_id, order_id, reason, status, refund_amount, currency"
+                            ") VALUES (:id, :tid, :order, 'broken', 'REQUESTED', 1, 'SGD')"
+                        ),
+                        {"id": ret_id, "tid": tenant_id, "order": order_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_note() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM order_note WHERE id = :id"), {"id": note_a})
+                await session.commit()
+            await engine.dispose()
+
+        note_sql = "SELECT id FROM order_note WHERE id IN (:a, :b)"
+        ret_sql = "SELECT id FROM return_order WHERE id IN (:a, :b)"
+        _run(_seed())
+        assert _run(_visible(note_sql, TENANT_A, note_a, note_b)) == {note_a}
+        assert _run(_visible(note_sql, TENANT_B, note_a, note_b)) == {note_b}
+        assert _run(_visible(ret_sql, TENANT_A, ret_a, ret_b)) == {ret_a}
+        assert _run(_visible(ret_sql, TENANT_B, ret_a, ret_b)) == {ret_b}
+        with pytest.raises(Exception):  # noqa: B017 - 备注只追加，应用角色没有 DELETE
+            _run(_delete_note())

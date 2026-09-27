@@ -2,12 +2,14 @@
 
 import { LogoutOutlined, ShopOutlined, UserOutlined } from '@ant-design/icons';
 import { Alert, Avatar, Dropdown, Layout, Menu, Tag, Typography } from 'antd';
-import { useMemo } from 'react';
+import type { MenuProps } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { usePermission } from '@/hooks/usePermission';
 import zhCN from '@/i18n/zh-CN';
-import { MENU_ITEMS } from '@/router/menu';
+import { MENU_ITEMS, type MenuItemConfig } from '@/router/menu';
+import { menuLeaves } from '@/router/menuLeaves';
 import { useAuthStore } from '@/store/auth';
 
 const { Header, Sider, Content } = Layout;
@@ -21,10 +23,21 @@ export function AppLayout() {
   const tenant = useAuthStore((state) => state.tenant);
   const logout = useAuthStore((state) => state.logout);
 
-  // 未授权的菜单直接不渲染 —— 灰掉会让用户反复来问"为什么我点不了"
-  const visibleItems = useMemo(() => MENU_ITEMS.filter((item) => can(item.permission)), [can]);
+  const siderItems = useMemo(() => buildSiderItems(MENU_ITEMS, can, navigate), [can, navigate]);
+  const selectedKey = useMemo(() => {
+    const match = menuLeaves()
+      .filter((item) => can(item.permission))
+      .sort((left, right) => right.path.length - left.path.length)
+      .find((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`));
+    return match?.key ?? 'dashboard';
+  }, [can, location.pathname]);
+  const [openKeys, setOpenKeys] = useState<string[]>(location.pathname.startsWith('/orders') ? ['orders'] : []);
 
-  const selectedKey = visibleItems.find((item) => location.pathname.startsWith(item.path))?.key ?? 'dashboard';
+  useEffect(() => {
+    if (location.pathname.startsWith('/orders')) {
+      setOpenKeys((keys) => (keys.includes('orders') ? keys : [...keys, 'orders']));
+    }
+  }, [location.pathname]);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -47,13 +60,10 @@ export function AppLayout() {
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
+          openKeys={openKeys}
+          onOpenChange={setOpenKeys}
           style={{ borderInlineEnd: 'none' }}
-          items={visibleItems.map((item) => ({
-            key: item.key,
-            icon: item.icon,
-            label: item.label,
-            onClick: () => navigate(item.path),
-          }))}
+          items={siderItems}
         />
       </Sider>
 
@@ -113,6 +123,34 @@ export function AppLayout() {
       </Layout>
     </Layout>
   );
+}
+
+function buildSiderItems(
+  items: readonly MenuItemConfig[],
+  can: (permission: MenuItemConfig['permission']) => boolean,
+  navigate: (path: string) => void,
+): MenuProps['items'] {
+  const built: NonNullable<MenuProps['items']> = [];
+  for (const item of items) {
+    if (item.children && item.children.length > 0) {
+      const children = buildSiderItems(item.children, can, navigate);
+      if (!children || children.length === 0) {
+        continue;
+      }
+      built.push({ key: item.key, icon: item.icon, label: item.label, children });
+      continue;
+    }
+    if (!can(item.permission)) {
+      continue;
+    }
+    built.push({
+      key: item.key,
+      icon: item.icon,
+      label: item.label,
+      onClick: () => navigate(item.path),
+    });
+  }
+  return built;
 }
 
 export default AppLayout;

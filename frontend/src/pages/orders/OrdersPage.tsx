@@ -16,7 +16,7 @@ import {
   Timeline,
   Typography,
 } from 'antd';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError } from '@/api/client';
 import { downloadBase64, ordersApi } from '@/api/orders';
@@ -33,6 +33,8 @@ import { MoneyText } from '@/components/MoneyText';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import zhCN from '@/i18n/zh-CN';
 import { formatDateTime } from '@/utils/format';
+import { FreshnessBanner, OrderNav } from '@/pages/orders/OrderChrome';
+import { exceptionLabel, reviewLabel } from '@/pages/orders/labels';
 
 const copy = zhCN.orderPage;
 const statusCopy = zhCN.order.unifiedStatus;
@@ -71,10 +73,29 @@ function statusLabel(status: string) {
   return statusCopy[status as UnifiedStatusValue] ?? status;
 }
 
-export function OrdersPage() {
+function countdown(deadline: string | null) {
+  if (!deadline) {
+    return '—';
+  }
+  const remaining = new Date(deadline).getTime() - Date.now();
+  if (remaining <= 0) {
+    return copy.overdue;
+  }
+  const hours = Math.floor(remaining / 3_600_000);
+  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
+  return `${hours}小时${minutes}分`;
+}
+
+export function OrdersPage({ mode = 'all' }: { mode?: 'all' | 'to_ship' | 'exception' }) {
   const queryClient = useQueryClient();
   const [form] = Form.useForm<FilterForm>();
-  const [filters, setFilters] = useState<OrderListQuery>({ limit: 20 });
+  const queue = mode === 'to_ship' ? 'to_ship' : mode === 'exception' ? 'exception' : undefined;
+  const [filters, setFilters] = useState<OrderListQuery>({ limit: 20, queue });
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [addressOpen, setAddressOpen] = useState(false);
+  const [addressCountry, setAddressCountry] = useState('SG');
+  const [addressCity, setAddressCity] = useState('');
+  const [addressLine, setAddressLine] = useState('');
   const [extra, setExtra] = useState<OrderListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -135,6 +156,8 @@ export function OrdersPage() {
     setShipResult(null);
     setFilters({
       limit: 20,
+      queue,
+      exception_kind: filters.exception_kind,
       q: values.q || undefined,
       platform_code: values.platform_code,
       unified_status: values.unified_status,
@@ -158,8 +181,39 @@ export function OrdersPage() {
 
   const failedIds = shipResult?.results.filter((item) => !item.ok).map((item) => item.order_id) ?? [];
 
+  useEffect(() => {
+    if (mode !== 'to_ship') {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
+      if (event.key === 'j' || event.key === 'J') {
+        setActiveIndex((index) => Math.min(rows.length - 1, index + 1));
+      }
+      if (event.key === 'k' || event.key === 'K') {
+        setActiveIndex((index) => Math.max(0, index - 1));
+      }
+      if (event.key === 'Enter' && rows[activeIndex]) {
+        setSelected([rows[activeIndex].id]);
+        setShipOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeIndex, mode, rows]);
+
+  const title = mode === 'to_ship' ? zhCN.menu.ordersToShip : mode === 'exception' ? zhCN.menu.ordersExceptions : copy.title;
+
   return (
-    <Card title={copy.title} extra={<Typography.Text type="secondary">{copy.description}</Typography.Text>}>
+    <Card
+      title={title}
+      extra={<Typography.Text type="secondary">{mode === 'to_ship' ? copy.navHint : copy.description}</Typography.Text>}
+    >
+      <OrderNav />
+      <FreshnessBanner />
       <Form form={form} layout="inline" onFinish={applyFilters} style={{ marginBottom: 16, rowGap: 8 }}>
         <Form.Item name="q">
           <Input allowClear placeholder={copy.searchPlaceholder} style={{ width: 280 }} />
@@ -172,14 +226,37 @@ export function OrdersPage() {
             options={['amazon', 'shopee', 'lazada', 'tiktok'].map((value) => ({ value, label: value }))}
           />
         </Form.Item>
-        <Form.Item name="unified_status">
-          <Select
-            allowClear
-            placeholder={copy.status}
-            style={{ width: 160 }}
-            options={Object.values(UnifiedStatus).map((value) => ({ value, label: statusLabel(value) }))}
-          />
-        </Form.Item>
+        {mode === 'all' ? (
+          <Form.Item name="unified_status">
+            <Select
+              allowClear
+              placeholder={copy.status}
+              style={{ width: 160 }}
+              options={Object.values(UnifiedStatus).map((value) => ({ value, label: statusLabel(value) }))}
+            />
+          </Form.Item>
+        ) : null}
+        {mode === 'exception' ? (
+          <Form.Item>
+            <Select
+              allowClear
+              placeholder={copy.exceptionAll}
+              style={{ width: 160 }}
+              value={filters.exception_kind}
+              onChange={(value) => {
+                setSelected([]);
+                setFilters((current) => ({ ...current, exception_kind: value }));
+              }}
+              options={[
+                { value: 'SKU_UNMATCHED', label: copy.skuUnmatched },
+                { value: 'ADDRESS_INVALID', label: copy.addressInvalid },
+                { value: 'SHIP_DUE_SOON', label: copy.shipDueSoon },
+                { value: 'SHIP_OVERDUE', label: copy.shipOverdue },
+                { value: 'REVIEW_PENDING', label: copy.reviewPending },
+              ]}
+            />
+          </Form.Item>
+        ) : null}
         <Form.Item name="shop_id">
           <Input allowClear placeholder={copy.shopId} style={{ width: 160 }} />
         </Form.Item>
@@ -203,7 +280,9 @@ export function OrdersPage() {
             <Button
               onClick={() => {
                 form.resetFields();
-                applyFilters({});
+                setSelected([]);
+                setShipResult(null);
+                setFilters({ limit: 20, queue });
               }}
             >
               {copy.reset}
@@ -228,7 +307,24 @@ export function OrdersPage() {
         />
       ) : null}
 
-      <Space style={{ marginBottom: 12 }}>
+      <Space
+        style={
+          mode === 'to_ship'
+            ? {
+                position: 'fixed',
+                bottom: 24,
+                left: '50%',
+                zIndex: 10,
+                transform: 'translateX(-50%)',
+                padding: 12,
+                background: '#fff',
+                border: '1px solid #f0f0f0',
+                borderRadius: 8,
+                boxShadow: '0 6px 16px rgb(0 0 0 / 8%)',
+              }
+            : { marginBottom: 12 }
+        }
+      >
         <Typography.Text>
           {copy.selected} {selected.length}
         </Typography.Text>
@@ -271,6 +367,13 @@ export function OrdersPage() {
             {copy.print}
           </Button>
         </PermissionGuard>
+        {mode === 'to_ship' ? (
+          <PermissionGuard permission={Perm.ORDER_WRITE}>
+            <Button disabled={selected.length === 0} onClick={() => setAddressOpen(true)}>
+              {copy.changeAddress}
+            </Button>
+          </PermissionGuard>
+        ) : null}
         <Button onClick={() => setExportOpen(true)}>{copy.export}</Button>
         {hasMore ? <Button onClick={() => void loadMore()}>{copy.loadMore}</Button> : null}
       </Space>
@@ -281,6 +384,15 @@ export function OrdersPage() {
         dataSource={rows}
         pagination={false}
         locale={{ emptyText: copy.empty }}
+        onRow={(row, index) => ({
+          style: {
+            background: row.exceptions.includes('SHIP_OVERDUE')
+              ? '#fff1f0'
+              : mode === 'to_ship' && index === activeIndex
+                ? '#e6f4ff'
+                : undefined,
+          },
+        })}
         rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys.map(String)) }}
         columns={[
           { title: copy.orderNo, dataIndex: 'platform_order_id' },
@@ -305,6 +417,50 @@ export function OrdersPage() {
             ),
           },
           { title: copy.buyer, dataIndex: 'buyer_name', width: 100, render: (value: string | null) => value || '—' },
+          ...(mode === 'to_ship'
+            ? [
+                {
+                  title: copy.deadline,
+                  width: 110,
+                  render: (_: unknown, row: OrderListItem) => (
+                    <span style={{ whiteSpace: 'nowrap', color: row.exceptions.includes('SHIP_OVERDUE') ? '#cf1322' : undefined }}>
+                      {countdown(row.ship_deadline)}
+                    </span>
+                  ),
+                },
+              ]
+            : []),
+          ...(mode !== 'all'
+            ? [
+                {
+                  title: copy.exception,
+                  render: (_: unknown, row: OrderListItem) => row.exceptions.map(exceptionLabel).join('、') || '—',
+                },
+              ]
+            : []),
+          ...(mode === 'exception'
+            ? [
+                {
+                  title: copy.reviewPending,
+                  width: 160,
+                  render: (_: unknown, row: OrderListItem) =>
+                    row.review_status === 'PENDING' ? (
+                      <PermissionGuard permission={Perm.ORDER_WRITE}>
+                        <Button
+                          type="link"
+                          onClick={() =>
+                            void ordersApi.decideReview(row.id, 'approve').then(() => queryClient.invalidateQueries({ queryKey: ['orders'] }))
+                          }
+                        >
+                          {copy.approveReview}
+                        </Button>
+                      </PermissionGuard>
+                    ) : (
+                      reviewLabel(row.review_status)
+                    ),
+                },
+              ]
+            : []),
           {
             title: copy.paidAt,
             dataIndex: 'paid_at',
@@ -425,6 +581,35 @@ export function OrdersPage() {
       </Modal>
 
       <Modal
+        title={copy.changeAddress}
+        open={addressOpen}
+        onCancel={() => setAddressOpen(false)}
+        onOk={async () => {
+          const failures: string[] = [];
+          for (const orderId of selected) {
+            try {
+              await ordersApi.changeAddress(orderId, {
+                country: addressCountry.trim().toUpperCase(),
+                city: addressCity.trim(),
+                line1: addressLine.trim(),
+              });
+            } catch (error: unknown) {
+              failures.push(error instanceof ApiError ? error.message : orderId);
+            }
+          }
+          setAddressOpen(false);
+          setNotice(failures.length > 0 ? failures.join('；') : copy.addressSaved);
+          await queryClient.invalidateQueries({ queryKey: ['orders'] });
+        }}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Input value={addressCountry} addonBefore={copy.addressCountry} onChange={(event) => setAddressCountry(event.target.value)} />
+          <Input value={addressCity} addonBefore={copy.addressCity} onChange={(event) => setAddressCity(event.target.value)} />
+          <Input value={addressLine} addonBefore={copy.addressLine} onChange={(event) => setAddressLine(event.target.value)} />
+        </Space>
+      </Modal>
+
+      <Modal
         title={copy.export}
         open={exportOpen}
         onCancel={() => setExportOpen(false)}
@@ -443,4 +628,12 @@ export function OrdersPage() {
       </Modal>
     </Card>
   );
+}
+
+export function ToShipPage() {
+  return <OrdersPage mode="to_ship" />;
+}
+
+export function ExceptionsPage() {
+  return <OrdersPage mode="exception" />;
 }

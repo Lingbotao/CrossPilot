@@ -16,6 +16,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -27,12 +28,14 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import AuditMixin, Base, PKMixin, TenantMixin
 from app.db.snowflake import next_snowflake_id
+from app.engines.order_desk import RESTOCK_STATUS_SQL, RETURN_STATUS_SQL, REVIEW_STATUS_SQL
 from app.engines.order_status import UNIFIED_STATUS_SQL
 
 ORDER_MODULE = "order"
@@ -63,6 +66,9 @@ class SalesOrder(Base, PKMixin, TenantMixin, AuditMixin):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="AUTO_PASSED", server_default="AUTO_PASSED"
+    )
     raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -70,6 +76,10 @@ class SalesOrder(Base, PKMixin, TenantMixin, AuditMixin):
         CheckConstraint(
             f"unified_status IN ({UNIFIED_STATUS_SQL})",
             name="unified_status",
+        ),
+        CheckConstraint(
+            f"review_status IN ({REVIEW_STATUS_SQL})",
+            name="review_status",
         ),
         Index("ix_sales_order_tenant_id_unified_status_created_at", "tenant_id", "unified_status", "created_at"),
         Index("ix_sales_order_tenant_id_shop_id_created_at", "tenant_id", "shop_id", "created_at"),
@@ -203,13 +213,83 @@ class OrderFee(Base, PKMixin, TenantMixin, AuditMixin):
     )
 
 
+class OrderReviewRule(Base, PKMixin, TenantMixin, AuditMixin):
+    """金额审核规则。同一租户同一币种一条。超过阈值才进入人工审核。"""
+
+    __tablename__ = "order_review_rule"
+
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    amount_gt: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+
+    __table_args__ = (UniqueConstraint("tenant_id", "currency", name="uq_order_review_rule_tenant_id_currency"),)
+
+
+class OrderNote(Base, PKMixin, TenantMixin):
+    """订单备注。回传平台成功后才追加，不更新、不删除。"""
+
+    __tablename__ = "order_note"
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sales_order.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (Index("ix_order_note_tenant_id_order_id_created_at", "tenant_id", "order_id", "created_at"),)
+
+
+class OrderAddressLog(Base, PKMixin, TenantMixin):
+    """改址历史。失败行保留，但不会改订单上的收货地址。"""
+
+    __tablename__ = "order_address_log"
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sales_order.id"), nullable=False)
+    before_address: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    after_address: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('SUCCEEDED', 'FAILED')", name="status"),
+        Index("ix_order_address_log_tenant_id_order_id_created_at", "tenant_id", "order_id", "created_at"),
+    )
+
+
+class ReturnOrder(Base, PKMixin, TenantMixin, AuditMixin):
+    """退货退款单。库存恢复记在 restock_status，等库存模块入账。"""
+
+    __tablename__ = "return_order"
+
+    order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sales_order.id"), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    refund_amount: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    restock_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    restock_sellable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    restock_status: Mapped[str] = mapped_column(String(16), nullable=False, default="NONE", server_default="NONE")
+
+    __table_args__ = (
+        CheckConstraint(f"status IN ({RETURN_STATUS_SQL})", name="status"),
+        CheckConstraint(f"restock_status IN ({RESTOCK_STATUS_SQL})", name="restock_status"),
+        Index("ix_return_order_tenant_id_order_id", "tenant_id", "order_id"),
+        Index("ix_return_order_tenant_id_status", "tenant_id", "status"),
+    )
+
+
 __all__ = [
     "ORDER_MODULE",
     "SHIPMENT_FAILED",
     "SHIPMENT_SUCCEEDED",
+    "OrderAddressLog",
     "OrderFee",
     "OrderItem",
+    "OrderNote",
+    "OrderReviewRule",
     "OrderStatusLog",
+    "ReturnOrder",
     "SalesOrder",
     "Shipment",
     "ShopSyncCursor",

@@ -83,20 +83,27 @@ async def _get_or_create_user(session: AsyncSession, email: str, display_name: s
 
 async def _seed_roles(session: AsyncSession, tenant_id: int) -> None:
     """写入 8 个内置角色。权限点来自代码常量 —— 保证与后端校验口径完全一致。"""
-    existing_codes = set((await session.execute(select(Role.code).where(Role.tenant_id == tenant_id))).scalars().all())
+    existing = {
+        row.code: row
+        for row in (await session.execute(select(Role).where(Role.tenant_id == tenant_id))).scalars().all()
+    }
     for role_code in RoleCode:
-        if role_code.value in existing_codes:
-            continue
-        session.add(
-            Role(
-                tenant_id=tenant_id,
-                code=role_code.value,
-                name=ROLE_NAMES_ZH[role_code],
-                is_system=True,
-                permission_codes=permission_codes_for_role(role_code.value),
-                description=ROLE_DESCRIPTIONS_ZH[role_code],
+        codes = permission_codes_for_role(role_code.value)
+        row = existing.get(role_code.value)
+        if row is None:
+            session.add(
+                Role(
+                    tenant_id=tenant_id,
+                    code=role_code.value,
+                    name=ROLE_NAMES_ZH[role_code],
+                    is_system=True,
+                    permission_codes=codes,
+                    description=ROLE_DESCRIPTIONS_ZH[role_code],
+                )
             )
-        )
+            continue
+        if row.is_system:
+            row.permission_codes = codes
     await session.flush()
     log.info("roles_seeded", tenant_id=tenant_id, count=len(RoleCode))
 

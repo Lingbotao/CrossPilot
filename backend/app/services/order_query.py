@@ -12,10 +12,11 @@ from app.adapters.registry import SUPPORTED_PLATFORMS
 from app.core.config import settings
 from app.core.errors import ErrorCode, NotFoundError, ParamInvalidError, PlatformUnsupportedError
 from app.core.pagination import PageData, PageInfo, decode_cursor, encode_cursor
+from app.engines.order_desk import ExceptionKind, classify_exceptions, ship_deadline, ship_window
 from app.engines.order_privacy import mask_party
 from app.engines.order_status import parse_unified
 from app.models.enums import AuditAction
-from app.models.order import OrderFee, OrderItem, OrderStatusLog
+from app.models.order import OrderFee, OrderItem, OrderStatusLog, SalesOrder
 from app.repositories.identity import AuditLogRepository
 from app.repositories.order import OrderStatusLogRepository
 from app.repositories.order_read import OrderHit, OrderListQuery, OrderReadRepository
@@ -98,8 +99,16 @@ class OrderQueryService:
         amount_max: Decimal | None,
         sku: str | None,
         keyword: str | None,
+        queue: str | None = None,
+        exception_kind: str | None = None,
     ) -> PageData[OrderListItem]:
-        before_at, before_id = read_order_cursor(cursor)
+        as_of = datetime.now(UTC)
+        before_at, before_id = (None, None)
+        before_rank, before_paid = (None, None)
+        if queue == "to_ship":
+            before_rank, before_paid, before_id = read_deadline_cursor(cursor)
+        else:
+            before_at, before_id = read_order_cursor(cursor)
         query = self._query(
             limit=limit + 1,
             platform_code=platform_code,
@@ -114,16 +123,25 @@ class OrderQueryService:
             keyword=keyword,
             before_created_at=before_at,
             before_id=before_id,
+            queue=queue,
+            exception_kind=exception_kind,
+            as_of=as_of,
+            before_rank=before_rank,
+            before_paid_at=before_paid,
         )
         hits = await self.reader.list_orders(query)
         has_more = len(hits) > limit
         visible = hits[:limit]
+        unmatched = await self.reader.unmatched_order_ids([hit.order.id for hit in visible])
         next_cursor = None
         if has_more and visible:
             last = visible[-1].order
-            next_cursor = write_order_cursor(last.created_at, last.id)
+            if queue == "to_ship":
+                next_cursor = write_deadline_cursor(last, as_of)
+            else:
+                next_cursor = write_order_cursor(last.created_at, last.id)
         return PageData[OrderListItem](
-            items=[_list_item(hit, role_code) for hit in visible],
+            items=[_list_item(hit, role_code, sku_unmatched=hit.order.id in unmatched, now=as_of) for hit in visible],
             page_info=PageInfo(cursor=next_cursor, has_more=has_more),
         )
 
@@ -134,7 +152,7 @@ class OrderQueryService:
         items = await self.reader.list_items(hit.order.id)
         fees = await self.reader.list_fees([hit.order.id])
         logs = await self.logs.list_for_order(hit.order.id)
-        return _detail(hit, role_code, items=items, fees=fees, logs=logs)
+        return _detail(hit, role_code, items=items, fees=fees, logs=logs, now=datetime.now(UTC))
 
     async def export_orders(
         self,
@@ -213,6 +231,11 @@ class OrderQueryService:
         keyword: str | None,
         before_created_at: datetime | None,
         before_id: int | None,
+        queue: str | None = None,
+        exception_kind: str | None = None,
+        as_of: datetime | None = None,
+        before_rank: int | None = None,
+        before_paid_at: datetime | None = None,
     ) -> OrderListQuery:
         raw_platform = _clean_str(platform_code)
         platform = None if raw_platform is None else raw_platform.lower()
@@ -222,6 +245,12 @@ class OrderQueryService:
         if status is not None and parse_unified(status) is None:
             raise ParamInvalidError("统一状态不在九态之内")
         site = _clean_str(site_code)
+        desk = _clean_str(queue)
+        if desk is not None and desk not in {"to_ship", "exception"}:
+            raise ParamInvalidError("订单队列不正确")
+        kind = _clean_str(exception_kind)
+        if kind is not None and kind not in {item.value for item in ExceptionKind}:
+            raise ParamInvalidError("异常类型不正确")
         return OrderListQuery(
             limit=limit,
             platform_code=platform,
@@ -236,6 +265,13 @@ class OrderQueryService:
             keyword=_clean_str(keyword),
             before_created_at=before_created_at,
             before_id=before_id,
+            queue=desk,
+            exception_kind=kind,
+            sla_hours=settings.order_ship_sla_hours,
+            warn_hours=settings.order_ship_warn_hours,
+            as_of=as_of,
+            before_rank=before_rank,
+            before_paid_at=before_paid_at,
         )
 
 
@@ -274,6 +310,48 @@ def read_order_cursor(cursor: str | None) -> tuple[datetime | None, int | None]:
     return moment, int(raw_id)
 
 
+def read_deadline_cursor(cursor: str | None) -> tuple[int | None, datetime | None, int | None]:
+    if not cursor:
+        return None, None, None
+    payload = decode_cursor(cursor)
+    if payload.get("k") != "d":
+        return None, None, None
+    raw_rank = payload.get("r")
+    raw_id = payload.get("id")
+    if raw_rank not in {0, 1, 2} or not isinstance(raw_id, str) or not raw_id.isdigit():
+        return None, None, None
+    raw_time = payload.get("t")
+    moment: datetime | None = None
+    if isinstance(raw_time, str) and raw_time:
+        try:
+            moment = datetime.fromisoformat(raw_time)
+        except ValueError:
+            return None, None, None
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+    return int(raw_rank), moment, int(raw_id)
+
+
+def write_deadline_cursor(order: SalesOrder, as_of: datetime) -> str:
+    window = ship_window(
+        unified_status=order.unified_status,
+        paid_at=order.paid_at,
+        now=as_of,
+        sla_hours=settings.order_ship_sla_hours,
+        warn_hours=settings.order_ship_warn_hours,
+    )
+    rank = 2
+    if window == ExceptionKind.SHIP_OVERDUE.value:
+        rank = 0
+    elif window == ExceptionKind.SHIP_DUE_SOON.value:
+        rank = 1
+    paid = ""
+    if order.paid_at is not None:
+        moment = order.paid_at if order.paid_at.tzinfo is not None else order.paid_at.replace(tzinfo=UTC)
+        paid = moment.isoformat()
+    return encode_cursor({"k": "d", "r": rank, "t": paid, "id": str(order.id)})
+
+
 def write_order_cursor(created_at: datetime, order_id: int) -> str:
     moment = created_at if created_at.tzinfo is not None else created_at.replace(tzinfo=UTC)
     return encode_cursor({"t": moment.isoformat(), "id": str(order_id)})
@@ -301,9 +379,27 @@ def _clean_str(value: object) -> str | None:
     return text or None
 
 
-def _list_item(hit: OrderHit, role_code: str) -> OrderListItem:
+def _list_item(
+    hit: OrderHit,
+    role_code: str,
+    *,
+    sku_unmatched: bool = False,
+    now: datetime | None = None,
+) -> OrderListItem:
     buyer, _ship = mask_party(role_code, hit.order.buyer_info, hit.order.ship_to)
     order = hit.order
+    moment = now or datetime.now(UTC)
+    flags = classify_exceptions(
+        unified_status=order.unified_status,
+        review_status=order.review_status,
+        ship_to=order.ship_to,
+        sku_unmatched=sku_unmatched,
+        paid_at=order.paid_at,
+        now=moment,
+        sla_hours=settings.order_ship_sla_hours,
+        warn_hours=settings.order_ship_warn_hours,
+    )
+    deadline = ship_deadline(order.paid_at, settings.order_ship_sla_hours) if order.unified_status == "PAID" else None
     return OrderListItem(
         id=order.id,
         shop_id=order.shop_id,
@@ -320,6 +416,9 @@ def _list_item(hit: OrderHit, role_code: str) -> OrderListItem:
         buyer_name=buyer["name"],
         shipment_status=hit.shipment_status,
         failure_reason=hit.failure_reason,
+        review_status=order.review_status,
+        exceptions=flags,
+        ship_deadline=deadline,
     )
 
 
@@ -330,9 +429,15 @@ def _detail(
     items: list[OrderItem],
     fees: list[OrderFee],
     logs: list[OrderStatusLog],
+    now: datetime | None = None,
 ) -> OrderDetail:
     buyer, ship = mask_party(role_code, hit.order.buyer_info, hit.order.ship_to)
-    base = _list_item(hit, role_code)
+    base = _list_item(
+        hit,
+        role_code,
+        sku_unmatched=any(item.sku_id is None for item in items),
+        now=now,
+    )
     order = hit.order
     return OrderDetail(
         **base.model_dump(),

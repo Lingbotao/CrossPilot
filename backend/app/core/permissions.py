@@ -72,6 +72,8 @@ class Perm(StrEnum):
     # 订单
     ORDER_READ = "order:read"
     ORDER_SHIP = "order:ship"
+    ORDER_WRITE = "order:write"
+    ORDER_RULE = "order:rule"
     # 库存
     INVENTORY_READ = "inventory:read"
     INVENTORY_WRITE = "inventory:write"
@@ -112,6 +114,8 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.PRODUCT_WRITE,
             Perm.ORDER_READ,
             Perm.ORDER_SHIP,
+            Perm.ORDER_WRITE,
+            Perm.ORDER_RULE,
             Perm.INVENTORY_READ,
             Perm.INVENTORY_WRITE,
             Perm.PURCHASE_READ,  # 👁 只读
@@ -133,6 +137,7 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.PRODUCT_WRITE,
             Perm.ORDER_READ,
             Perm.ORDER_SHIP,
+            Perm.ORDER_WRITE,
             Perm.INVENTORY_READ,
             Perm.INVENTORY_WRITE,
             Perm.ADS_READ,
@@ -176,6 +181,7 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.PRODUCT_READ,  # 👁
             Perm.ORDER_READ,
             Perm.ORDER_SHIP,  # ⚠️ 部分受限（受数据范围约束）
+            Perm.ORDER_WRITE,
         }
     ),
     RoleCode.VIEWER: frozenset(

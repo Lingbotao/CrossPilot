@@ -27,6 +27,7 @@ from app.models.order import OrderStatusLog
 from app.models.platform import Shop
 from app.repositories.order import OrderStatusLogRepository, SalesOrderRepository
 from app.repositories.status_mapping import PlatformStatusMappingRepository
+from app.services.order_desk import OrderDeskService
 from app.sync_engine.idempotency import WriteAction, order_idempotency_key
 
 
@@ -106,19 +107,23 @@ class OrderStatusService:
             return decide_status(parse_unified(current), target, source=source)
 
         action, decision = await self.orders.upsert(shop, order, resolve=resolve)
-        if decision is not None and decision.kind == DecisionKind.APPLY and action is not WriteAction.SKIP:
-            row = await self.orders.get_by_key(key)
-            if row is not None:
-                await self.logs.append(
-                    tenant_id=shop.tenant_id,
-                    order_id=row.id,
-                    from_status=None if decision.from_status is None else decision.from_status.value,
-                    to_status=decision.to_status.value,
-                    platform_status=order.platform_status,
-                    operator_id=operator_id,
-                    source=source.value,
-                    remark=UNMAPPED_REMARK if decision.unmapped else None,
-                )
+        if action is WriteAction.SKIP:
+            return action, decision
+        row = await self.orders.get_by_key(key)
+        if row is None:
+            return action, decision
+        if decision is not None and decision.kind == DecisionKind.APPLY:
+            await self.logs.append(
+                tenant_id=shop.tenant_id,
+                order_id=row.id,
+                from_status=None if decision.from_status is None else decision.from_status.value,
+                to_status=decision.to_status.value,
+                platform_status=order.platform_status,
+                operator_id=operator_id,
+                source=source.value,
+                remark=UNMAPPED_REMARK if decision.unmapped else None,
+            )
+        await OrderDeskService(self.session).apply_review(row)
         return action, decision
 
 

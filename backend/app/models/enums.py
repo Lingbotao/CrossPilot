@@ -83,6 +83,7 @@ class SyncStatus(IntEnum):
     RUNNING = 1
     SUCCESS = 2
     FAILED = 3
+    PARTIAL = 4
 
 
 class AuditAction:

@@ -78,6 +78,8 @@ export const ErrorCode = {
   ORDER_NOT_FOUND: 50001,
   ORDER_STATE_INVALID: 50002,
   BATCH_SHIP_PARTIAL_FAILED: 50003,
+  ORDER_PLATFORM_REJECTED: 50005,
+  RETURN_STATE_INVALID: 50006,
 
   // 60xxx 库存
   INVENTORY_INSUFFICIENT: 60001,
@@ -123,6 +125,8 @@ export const Perm = {
   PRODUCT_WRITE: 'product:write',
   ORDER_READ: 'order:read',
   ORDER_SHIP: 'order:ship',
+  ORDER_WRITE: 'order:write',
+  ORDER_RULE: 'order:rule',
   INVENTORY_READ: 'inventory:read',
   INVENTORY_WRITE: 'inventory:write',
   PURCHASE_READ: 'purchase:read',
@@ -482,6 +486,9 @@ export interface OrderListItem {
   buyer_name: string | null;
   shipment_status: string | null;
   failure_reason: string | null;
+  review_status: string;
+  exceptions: string[];
+  ship_deadline: string | null;
 }
 
 export interface OrderParty {
@@ -565,6 +572,8 @@ export interface OrderListQuery {
   sku?: string;
   q?: string;
   fields?: string;
+  queue?: 'to_ship' | 'exception';
+  exception_kind?: string;
 }
 
 export interface ShipItemResult {
@@ -594,4 +603,43 @@ export interface FilePayload {
   row_count: number;
   truncated: boolean;
   skipped: LabelSkip[];
+}
+
+export interface ReviewRule {
+  id: string;
+  currency: string;
+  amount_gt: string;
+  enabled: boolean;
+}
+
+export interface ReturnOrderView {
+  id: string;
+  order_id: string;
+  platform_order_id: string;
+  reason: string;
+  status: string;
+  refund_amount: string;
+  currency: string;
+  restock_flag: boolean;
+  restock_sellable: boolean;
+  restock_status: string;
+  created_at: string;
+}
+
+export interface OrderFreshness {
+  shop_id: string;
+  shop_name: string;
+  platform_code: string;
+  last_sync_at: string | null;
+  message: string;
+}
+
+export interface OrderAddressWrite {
+  name?: string;
+  phone?: string;
+  country: string;
+  state?: string;
+  city?: string;
+  line1?: string;
+  postal_code?: string;
 }

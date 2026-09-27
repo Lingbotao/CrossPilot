@@ -16,7 +16,7 @@ import { RegisterPage } from '@/pages/RegisterPage';
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage';
 import { DefaultAuthorizedRoute } from '@/router/DefaultAuthorizedRoute';
 import { RequireAuth, RequireGuest, RequirePermission } from '@/router/guards';
-import { MENU_ITEMS } from '@/router/menu';
+import { menuLeaves } from '@/router/menuLeaves';
 
 export const router = createBrowserRouter([
   {
@@ -46,7 +46,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <DefaultAuthorizedRoute /> },
-      ...MENU_ITEMS.map((item) => {
+      ...menuLeaves().map((item) => {
         const Page = item.component ?? PlaceholderPage;
         return {
           path: item.path.replace(/^\//, ''),

@@ -23,7 +23,9 @@ import type { ComponentType, ReactNode } from 'react';
 import { Perm, type PermValue } from '@/api/types';
 import zhCN from '@/i18n/zh-CN';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { OrdersPage } from '@/pages/orders/OrdersPage';
+import { ExceptionsPage, OrdersPage, ToShipPage } from '@/pages/orders/OrdersPage';
+import { ReturnsPage } from '@/pages/orders/ReturnsPage';
+import { OrderSettingsPage } from '@/pages/orders/SettingsPage';
 import { ShopsPage } from '@/pages/shops/ShopsPage';
 import { AuditPage } from '@/pages/system/AuditPage';
 import { MembersPage } from '@/pages/system/MembersPage';
@@ -40,6 +42,7 @@ export interface MenuItemConfig {
   delivered: boolean;
   /** 已交付页面组件；未交付项由路由统一渲染 PlaceholderPage。 */
   component?: ComponentType;
+  children?: readonly MenuItemConfig[];
 }
 
 export const MENU_ITEMS: readonly MenuItemConfig[] = [
@@ -71,7 +74,58 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     permission: Perm.ORDER_READ,
     milestone: 'M2（Week 4–5）',
     delivered: true,
-    component: OrdersPage,
+    children: [
+      {
+        key: 'orders-all',
+        path: '/orders',
+        label: zhCN.menu.ordersAll,
+        icon: null,
+        permission: Perm.ORDER_READ,
+        milestone: 'M2（Week 4–5）',
+        delivered: true,
+        component: OrdersPage,
+      },
+      {
+        key: 'orders-to-ship',
+        path: '/orders/to-ship',
+        label: zhCN.menu.ordersToShip,
+        icon: null,
+        permission: Perm.ORDER_READ,
+        milestone: 'M2（Week 4–5）',
+        delivered: true,
+        component: ToShipPage,
+      },
+      {
+        key: 'orders-exceptions',
+        path: '/orders/exceptions',
+        label: zhCN.menu.ordersExceptions,
+        icon: null,
+        permission: Perm.ORDER_READ,
+        milestone: 'M2（Week 4–5）',
+        delivered: true,
+        component: ExceptionsPage,
+      },
+      {
+        key: 'orders-returns',
+        path: '/orders/returns',
+        label: zhCN.menu.ordersReturns,
+        icon: null,
+        permission: Perm.ORDER_READ,
+        milestone: 'M2（Week 4–5）',
+        delivered: true,
+        component: ReturnsPage,
+      },
+      {
+        key: 'orders-settings',
+        path: '/orders/settings',
+        label: zhCN.menu.ordersSettings,
+        icon: null,
+        permission: Perm.ORDER_RULE,
+        milestone: 'M2（Week 4–5）',
+        delivered: true,
+        component: OrderSettingsPage,
+      },
+    ],
   },
   {
     key: 'products',

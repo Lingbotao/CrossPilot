@@ -10,11 +10,13 @@ import { ToolOutlined } from '@ant-design/icons';
 import { Card, Result, Tag, Typography } from 'antd';
 import { useLocation } from 'react-router-dom';
 
-import { MENU_ITEMS } from '@/router/menu';
+import { menuLeaves } from '@/router/menuLeaves';
 
 export function PlaceholderPage() {
   const location = useLocation();
-  const item = MENU_ITEMS.find((menu) => location.pathname.startsWith(menu.path));
+  const item = [...menuLeaves()]
+    .sort((left, right) => right.path.length - left.path.length)
+    .find((menu) => location.pathname === menu.path || location.pathname.startsWith(`${menu.path}/`));
 
   return (
     <Card>

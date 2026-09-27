@@ -27,7 +27,7 @@ from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError
 from app.adapters.oauth_parse import amazon_order, token_bundle
 from app.adapters.quotas import quota_for
-from app.adapters.shipping import post_shipment
+from app.adapters.shipping import post_order_change, post_shipment
 from app.adapters.signing import amazon_consent_url
 from app.adapters.sites import AMAZON_CONSENT_HOST, AMAZON_REGION
 from app.adapters.transport import PlatformTransport, default_transport
@@ -139,6 +139,24 @@ class AmazonAdapter(PlatformAdapter):
             platform_order_id=order_id,
             carrier=carrier,
             tracking_no=tracking_no,
+        )
+
+    async def update_address(self, cred: CredentialView, order_id: str, address: dict[str, str]) -> None:
+        await post_order_change(
+            self.transport,
+            cred,
+            url=f"{_ORDERS_URL}/{quote(order_id, safe='')}/update_address",
+            platform_order_id=order_id,
+            fields={"address": address},
+        )
+
+    async def update_note(self, cred: CredentialView, order_id: str, content: str) -> None:
+        await post_order_change(
+            self.transport,
+            cred,
+            url=f"{_ORDERS_URL}/{quote(order_id, safe='')}/update_note",
+            platform_order_id=order_id,
+            fields={"content": content},
         )
 
     def rate_limit(self) -> RateLimitSpec:

@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     order_batch_ship_limit: int = 200
     order_export_max_rows: int = 5000
     order_tracking_prefix: str = "CP"
+    # 待发货 SLA 与超时预警提前量（F4-08）。改配置即可，业务代码不写死小时数。
+    order_ship_sla_hours: int = 48
+    order_ship_warn_hours: int = 4
 
     # ------------------------------------------------------------------ 对象存储
     s3_endpoint: str = "http://localhost:9000"

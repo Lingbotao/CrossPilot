@@ -36,6 +36,7 @@ from app.repositories.platform import (
 from app.schemas.common import money_to_str
 from app.services.credential_service import view_from_row
 from app.services.order_status import OrderStatusService
+from app.services.shop_health import resolve_sync_status
 from app.sync_engine.cursor import (
     OrderSyncWindow,
     PullResult,
@@ -123,27 +124,24 @@ class OrderSyncService:
             if point is not None:
                 await self.cursors.save(shop, point)
         finished = datetime.now(UTC)
+        landed = counts["inserted"] + counts["updated"] + counts["skipped"]
+        outcome = resolve_sync_status(failed=counts["failed"], landed=landed, errored=batch.error is not None)
+        task.status = int(outcome)
         if batch.error is not None:
-            task.status = int(SyncStatus.FAILED)
             task.error = str(batch.error)[:512]
-            shop.last_sync_status = int(SyncStatus.FAILED)
-            shop.last_error = task.error
             decision = batch.error.decision if isinstance(batch.error, AdapterError) else RetryDecision.RETRY
             retry_after = batch.error.retry_after_seconds if isinstance(batch.error, AdapterError) else None
         elif counts["failed"]:
-            task.status = int(SyncStatus.FAILED)
             task.error = f"{counts['failed']} 笔订单没有写入"
-            shop.last_sync_status = int(SyncStatus.FAILED)
-            shop.last_error = task.error
             decision = None
             retry_after = None
         else:
-            task.status = int(SyncStatus.SUCCESS)
             task.error = None
-            shop.last_sync_status = int(SyncStatus.SUCCESS)
-            shop.last_error = None
             decision = None
             retry_after = None
+        shop.last_sync_status = task.status
+        shop.last_error = task.error
+        stats["duration_ms"] = int((finished - now).total_seconds() * 1000)
         task.finished_at = finished
         task.stats = stats
         shop.last_sync_at = finished
@@ -312,6 +310,7 @@ class OrderSyncService:
             "status_unmapped": 0,
             "pages": 0,
             "first_order": None,
+            "duration_ms": int((finished - (task.started_at or finished)).total_seconds() * 1000),
         }
         shop.last_sync_at = finished
         shop.last_sync_status = int(SyncStatus.FAILED)

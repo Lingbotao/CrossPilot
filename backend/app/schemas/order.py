@@ -98,6 +98,9 @@ class OrderListItem(MoneyMixin):
     buyer_name: str | None
     shipment_status: str | None
     failure_reason: str | None
+    review_status: str = "AUTO_PASSED"
+    exceptions: list[str] = Field(default_factory=list)
+    ship_deadline: datetime | None = None
 
     @field_serializer("id", "shop_id")
     def _ids(self, value: int) -> str:
@@ -191,6 +194,104 @@ class FilePayload(BaseModel):
     skipped: list[LabelSkip] = Field(default_factory=list)
 
 
+class ReviewRuleView(MoneyMixin):
+    id: int
+    currency: str
+    amount_gt: Decimal
+    enabled: bool
+
+    @field_serializer("id")
+    def _id(self, value: int) -> str:
+        return str(value)
+
+
+class ReviewRuleWrite(BaseModel):
+    currency: str = Field(min_length=3, max_length=3)
+    amount_gt: Decimal
+    enabled: bool = True
+
+
+class ReviewDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+
+
+class AddressWrite(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    country: str = Field(min_length=2, max_length=8)
+    state: str | None = None
+    city: str | None = None
+    line1: str | None = None
+    postal_code: str | None = None
+
+
+class NoteWrite(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
+
+
+class NoteView(BaseModel):
+    id: int
+    content: str
+    created_at: datetime
+    created_by: int | None
+
+    @field_serializer("id", "created_by")
+    def _ids(self, value: int | None) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+
+class AddressLogView(BaseModel):
+    id: int
+    status: str
+    failure_reason: str | None
+    before_address: AddressView | None
+    after_address: AddressView
+    created_at: datetime
+
+    @field_serializer("id")
+    def _id(self, value: int) -> str:
+        return str(value)
+
+
+class ReturnWrite(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    refund_amount: Decimal
+    restock_flag: bool = False
+    restock_sellable: bool = True
+
+
+class ReturnView(MoneyMixin):
+    id: int
+    order_id: int
+    platform_order_id: str
+    reason: str
+    status: str
+    refund_amount: Decimal
+    currency: str
+    restock_flag: bool
+    restock_sellable: bool
+    restock_status: str
+    created_at: datetime
+
+    @field_serializer("id", "order_id")
+    def _ids(self, value: int) -> str:
+        return str(value)
+
+
+class FreshnessView(BaseModel):
+    shop_id: int
+    shop_name: str
+    platform_code: str
+    last_sync_at: datetime | None
+    message: str
+
+    @field_serializer("shop_id")
+    def _id(self, value: int) -> str:
+        return str(value)
+
+
 def parse_order_id(value: str) -> int:
     text = value.strip()
     if not text.isascii() or not text.isdigit():
@@ -199,8 +300,18 @@ def parse_order_id(value: str) -> int:
 
 
 __all__ = [
+    "AddressLogView",
     "AddressView",
+    "AddressWrite",
     "BatchShipRequest",
+    "FreshnessView",
+    "NoteView",
+    "NoteWrite",
+    "ReturnView",
+    "ReturnWrite",
+    "ReviewDecision",
+    "ReviewRuleView",
+    "ReviewRuleWrite",
     "BatchShipResult",
     "FilePayload",
     "LabelRequest",

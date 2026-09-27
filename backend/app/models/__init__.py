@@ -32,7 +32,18 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
-from app.models.order import OrderFee, OrderItem, OrderStatusLog, SalesOrder, Shipment, ShopSyncCursor
+from app.models.order import (
+    OrderAddressLog,
+    OrderFee,
+    OrderItem,
+    OrderNote,
+    OrderReviewRule,
+    OrderStatusLog,
+    ReturnOrder,
+    SalesOrder,
+    Shipment,
+    ShopSyncCursor,
+)
 from app.models.platform import Platform, PlatformApiLog, Shop, ShopCredential, ShopGroup, SyncTask
 from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
 
@@ -60,6 +71,10 @@ __all__ = [
     "OrderStatusLog",
     "Shipment",
     "OrderFee",
+    "OrderReviewRule",
+    "OrderNote",
+    "OrderAddressLog",
+    "ReturnOrder",
     "ShopSyncCursor",
     "PlatformStatusMapping",
     # 枚举

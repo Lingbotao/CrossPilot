@@ -21,7 +21,7 @@ from app.adapters.base import (
 from app.adapters.credentials import app_credentials
 from app.adapters.oauth_parse import tiktok_order, token_bundle
 from app.adapters.quotas import quota_for
-from app.adapters.shipping import post_shipment
+from app.adapters.shipping import post_order_change, post_shipment
 from app.adapters.signing import signatures_match, tiktok_push_sign, tiktok_sign
 from app.adapters.transport import PlatformTransport, default_transport
 from app.adapters.webhook_common import coalesce_id, header_value, load_object, matching_order, nested_dict, unix_time
@@ -171,6 +171,24 @@ class TikTokAdapter(PlatformAdapter):
             platform_order_id=order_id,
             carrier=carrier,
             tracking_no=tracking_no,
+        )
+
+    async def update_address(self, cred: CredentialView, order_id: str, address: dict[str, str]) -> None:
+        await post_order_change(
+            self.transport,
+            cred,
+            url=f"{_API_HOST}/order/202309/orders/update_address",
+            platform_order_id=order_id,
+            fields={"address": address},
+        )
+
+    async def update_note(self, cred: CredentialView, order_id: str, content: str) -> None:
+        await post_order_change(
+            self.transport,
+            cred,
+            url=f"{_API_HOST}/order/202309/orders/update_note",
+            platform_order_id=order_id,
+            fields={"content": content},
         )
 
     def rate_limit(self) -> RateLimitSpec:

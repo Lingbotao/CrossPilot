@@ -22,7 +22,7 @@ from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.oauth_parse import lazada_order, token_bundle
 from app.adapters.quotas import quota_for
-from app.adapters.shipping import post_shipment
+from app.adapters.shipping import post_order_change, post_shipment
 from app.adapters.signing import lazada_push_sign, lazada_sign, signatures_match
 from app.adapters.sites import LAZADA_AUTH_HOST
 from app.adapters.transport import PlatformTransport, default_transport
@@ -205,6 +205,26 @@ class LazadaAdapter(PlatformAdapter):
             tracking_no=tracking_no,
         )
 
+    async def update_address(self, cred: CredentialView, order_id: str, address: dict[str, str]) -> None:
+        host = _lazada_host(self.platform, cred)
+        await post_order_change(
+            self.transport,
+            cred,
+            url=f"{host}/order/update_address",
+            platform_order_id=order_id,
+            fields={"address": address},
+        )
+
+    async def update_note(self, cred: CredentialView, order_id: str, content: str) -> None:
+        host = _lazada_host(self.platform, cred)
+        await post_order_change(
+            self.transport,
+            cred,
+            url=f"{host}/order/update_note",
+            platform_order_id=order_id,
+            fields={"content": content},
+        )
+
     def rate_limit(self) -> RateLimitSpec:
         return quota_for(self.platform)
 
@@ -224,6 +244,17 @@ class LazadaAdapter(PlatformAdapter):
             "shipped_back": "RETURNED",
             "shipped_back_success": "RETURNED",
         }
+
+
+def _lazada_host(platform: str, cred: CredentialView) -> str:
+    host = LAZADA_AUTH_HOST.get(cred.site_code.upper())
+    if host is None:
+        raise AdapterError(
+            "站点不支持订单回传",
+            platform=platform,
+            decision=RetryDecision.FAIL_FAST,
+        )
+    return host
 
 
 def _lazada_page(adapter: LazadaAdapter, raw: dict[str, Any], cred: CredentialView) -> PageResult[UnifiedOrder]:
