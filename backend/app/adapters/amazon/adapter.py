@@ -93,11 +93,14 @@ class AmazonAdapter(PlatformAdapter):
 
     def status_mapping(self) -> dict[str, str]:
         return {
-            "Pending": "PENDING_PAYMENT",
-            "Unshipped": "TO_SHIP",
+            "Pending": "PENDING",
+            "PendingAvailability": "PENDING",
+            "Unshipped": "PAID",
+            "InvoiceUnconfirmed": "PAID",
             "PartiallyShipped": "SHIPPED",
             "Shipped": "SHIPPED",
             "Canceled": "CANCELLED",
+            "Unfulfillable": "CANCELLED",
         }
 
 

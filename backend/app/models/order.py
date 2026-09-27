@@ -1,8 +1,8 @@
-"""订单域（PRD 9.2 ④，Alembic 迁移批次 3 的第一截）。
+"""订单域（PRD 9.2 ④）。
 
-``sales_order`` 与 ``order_item`` 是流水，禁止软删除。
-``unified_status`` 先存适配器给出的统一状态文案。九态状态机和可配置映射在 M2-06。
-``order_item`` 按月分区，主键包含 ``created_at``。
+``sales_order``、``order_item``、``order_status_log`` 都是流水，禁止软删除。
+``unified_status`` 只允许九态文案（见 ``app.engines.order_status``）。
+``order_item`` 与 ``order_status_log`` 按月分区，主键包含 ``created_at``。
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -29,6 +30,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import AuditMixin, Base, PKMixin, TenantMixin
 from app.db.snowflake import next_snowflake_id
+from app.engines.order_status import UNIFIED_STATUS_SQL
 
 ORDER_MODULE = "order"
 
@@ -60,6 +62,10 @@ class SalesOrder(Base, PKMixin, TenantMixin, AuditMixin):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_sales_order_tenant_id_idempotency_key"),
+        CheckConstraint(
+            f"unified_status IN ({UNIFIED_STATUS_SQL})",
+            name="unified_status",
+        ),
         Index("ix_sales_order_tenant_id_unified_status_created_at", "tenant_id", "unified_status", "created_at"),
         Index("ix_sales_order_tenant_id_shop_id_created_at", "tenant_id", "shop_id", "created_at"),
     )
@@ -94,6 +100,37 @@ class OrderItem(Base, TenantMixin):
     )
 
 
+class OrderStatusLog(Base, TenantMixin):
+    """状态变更日志。只追加，不更新、不删除。按创建月份分区。"""
+
+    __tablename__ = "order_status_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=next_snowflake_id)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sales_order.id"), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    platform_status: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    operator_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    remark: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("id", "created_at", name="pk_order_status_log"),
+        CheckConstraint(f"to_status IN ({UNIFIED_STATUS_SQL})", name="to_status"),
+        CheckConstraint(
+            f"from_status IS NULL OR from_status IN ({UNIFIED_STATUS_SQL})",
+            name="from_status",
+        ),
+        CheckConstraint(
+            "source IN ('SYSTEM', 'WEBHOOK', 'MANUAL')",
+            name="source",
+        ),
+        Index("ix_order_status_log_tenant_id_order_id_created_at", "tenant_id", "order_id", "created_at"),
+        {"postgresql_partition_by": "RANGE (created_at)"},
+    )
+
+
 class ShopSyncCursor(Base, PKMixin, TenantMixin, AuditMixin):
     """店铺同步高水位。``resume_cursor`` 非空时表示上一轮分页还没拉完。"""
 
@@ -112,4 +149,4 @@ class ShopSyncCursor(Base, PKMixin, TenantMixin, AuditMixin):
     )
 
 
-__all__ = ["ORDER_MODULE", "OrderItem", "SalesOrder", "ShopSyncCursor"]
+__all__ = ["ORDER_MODULE", "OrderItem", "OrderStatusLog", "SalesOrder", "ShopSyncCursor"]

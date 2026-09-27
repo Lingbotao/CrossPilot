@@ -160,15 +160,15 @@ export const zhCN = {
 
   order: {
     unifiedStatus: {
-      PENDING_PAYMENT: '待付款',
-      PAID: '已付款',
-      TO_SHIP: '待发货',
+      PENDING: '待付款',
+      PAID: '已付款/待发货',
       SHIPPED: '已发货',
-      IN_TRANSIT: '运输中',
       DELIVERED: '已签收',
+      COMPLETED: '已完成',
       CANCELLED: '已取消',
-      RETURNING: '退货中',
+      REFUNDING: '退款中',
       REFUNDED: '已退款',
+      RETURNED: '已退货',
     },
   },
 

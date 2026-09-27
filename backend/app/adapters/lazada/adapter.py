@@ -119,12 +119,19 @@ class LazadaAdapter(PlatformAdapter):
 
     def status_mapping(self) -> dict[str, str]:
         return {
-            "unpaid": "PENDING_PAYMENT",
-            "pending": "TO_SHIP",
-            "ready_to_ship": "TO_SHIP",
+            "unpaid": "PENDING",
+            "pending": "PAID",
+            "packed": "PAID",
+            "repacked": "PAID",
+            "ready_to_ship": "PAID",
             "shipped": "SHIPPED",
             "delivered": "DELIVERED",
+            "confirmed": "COMPLETED",
             "canceled": "CANCELLED",
+            "returned": "RETURNED",
+            "failed": "CANCELLED",
+            "shipped_back": "RETURNED",
+            "shipped_back_success": "RETURNED",
         }
 
 

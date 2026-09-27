@@ -112,11 +112,13 @@ class TikTokAdapter(PlatformAdapter):
 
     def status_mapping(self) -> dict[str, str]:
         return {
-            "UNPAID": "PENDING_PAYMENT",
-            "AWAITING_SHIPMENT": "TO_SHIP",
-            "AWAITING_COLLECTION": "TO_SHIP",
-            "IN_TRANSIT": "IN_TRANSIT",
+            "UNPAID": "PENDING",
+            "ON_HOLD": "PENDING",
+            "AWAITING_SHIPMENT": "PAID",
+            "AWAITING_COLLECTION": "PAID",
+            "IN_TRANSIT": "SHIPPED",
             "DELIVERED": "DELIVERED",
+            "COMPLETED": "COMPLETED",
             "CANCELLED": "CANCELLED",
         }
 

@@ -417,3 +417,46 @@ export interface UnbindShopResponse {
   status: string;
   data_retain_until: string;
 }
+
+/** 统一订单状态（PRD 九态）。 */
+export const UnifiedStatus = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  SHIPPED: 'SHIPPED',
+  DELIVERED: 'DELIVERED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  REFUNDING: 'REFUNDING',
+  REFUNDED: 'REFUNDED',
+  RETURNED: 'RETURNED',
+} as const;
+
+export type UnifiedStatusValue = (typeof UnifiedStatus)[keyof typeof UnifiedStatus];
+
+export type StatusChangeSource = 'SYSTEM' | 'WEBHOOK' | 'MANUAL';
+
+export interface OrderStatusMapping {
+  id: string;
+  platform_code: string;
+  platform_status: string;
+  unified_status: UnifiedStatusValue;
+  updated_at: string;
+}
+
+export interface UpsertOrderStatusMapping {
+  platform_code: string;
+  platform_status: string;
+  unified_status: UnifiedStatusValue;
+}
+
+export interface OrderStatusLog {
+  id: string;
+  order_id: string;
+  from_status: UnifiedStatusValue | null;
+  to_status: UnifiedStatusValue;
+  platform_status: string;
+  operator_id: string | null;
+  source: StatusChangeSource;
+  remark: string | null;
+  created_at: string;
+}

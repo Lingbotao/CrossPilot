@@ -103,12 +103,16 @@ class ShopeeAdapter(PlatformAdapter):
 
     def status_mapping(self) -> dict[str, str]:
         return {
-            "UNPAID": "PENDING_PAYMENT",
-            "READY_TO_SHIP": "TO_SHIP",
-            "PROCESSED": "TO_SHIP",
+            "UNPAID": "PENDING",
+            "READY_TO_SHIP": "PAID",
+            "PROCESSED": "PAID",
+            "RETRY_SHIP": "PAID",
             "SHIPPED": "SHIPPED",
-            "COMPLETED": "DELIVERED",
+            "TO_CONFIRM_RECEIVE": "SHIPPED",
+            "IN_CANCEL": "REFUNDING",
             "CANCELLED": "CANCELLED",
+            "TO_RETURN": "RETURNED",
+            "COMPLETED": "COMPLETED",
         }
 
 

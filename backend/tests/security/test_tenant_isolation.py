@@ -7,7 +7,7 @@ PRD 13.2 第 4 条：**每个新增租户表都必须同步补越权用例**。
 本地没有 Docker / PostgreSQL 时整个文件会被跳过（不会失败）；
 CI 与 `docker compose up` 之后用 ``make test-security`` 跑。
 
-订单表 ``sales_order`` 有单独用例：租户 A 看不到租户 B 的订单行。
+订单表 ``sales_order`` 与状态日志 ``order_status_log`` 有单独用例：租户 A 看不到租户 B 的行。
 """
 
 from __future__ import annotations
@@ -426,7 +426,7 @@ class TestSalesOrderIsolation:
                         "platform_status, unified_status, currency, item_amount, shipping_amount, "
                         "tax_amount, discount_amount, total_amount"
                         ") VALUES ("
-                        ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'TO_SHIP', 'SGD', "
+                        ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'PAID', 'SGD', "
                         "19.9, 0, 0, 0, 19.9)"
                     ),
                     {
@@ -444,7 +444,7 @@ class TestSalesOrderIsolation:
                         "platform_status, unified_status, currency, item_amount, shipping_amount, "
                         "tax_amount, discount_amount, total_amount"
                         ") VALUES ("
-                        ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'TO_SHIP', 'SGD', "
+                        ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'PAID', 'SGD', "
                         "19.9, 0, 0, 0, 19.9)"
                     ),
                     {
@@ -488,3 +488,96 @@ class TestSalesOrderIsolation:
         assert _run(_visible(TENANT_B)) == {order_b}
         with pytest.raises(Exception):  # noqa: B017 - 应用角色对订单主表没有 DELETE
             _run(_delete_header())
+
+
+class TestOrderStatusLogIsolation:
+    def test_tenant_cannot_read_another_tenants_status_log(self, migrated: None) -> None:
+        shop_a = 950000000000000000 + time.time_ns() % 10**12
+        shop_b = shop_a + 1
+        order_a = shop_a + 2
+        order_b = shop_a + 3
+        log_a = shop_a + 4
+        log_b = shop_a + 5
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id, name in (
+                    (shop_a, TENANT_A, "log-a"),
+                    (shop_b, TENANT_B, "log-b"),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', :name, :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "name": name, "shop": f"seller-{shop_id}"},
+                    )
+                for order_id, tenant_id, shop_id in (
+                    (order_a, TENANT_A, shop_a),
+                    (order_b, TENANT_B, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sales_order ("
+                            "id, tenant_id, shop_id, platform_code, platform_order_id, idempotency_key, "
+                            "platform_status, unified_status, currency, item_amount, shipping_amount, "
+                            "tax_amount, discount_amount, total_amount"
+                            ") VALUES ("
+                            ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'PAID', 'SGD', "
+                            "19.9, 0, 0, 0, 19.9)"
+                        ),
+                        {
+                            "id": order_id,
+                            "tid": tenant_id,
+                            "shop": shop_id,
+                            "pid": f"L-{order_id}",
+                            "key": f"shopee:{shop_id}:L-{order_id}",
+                        },
+                    )
+                for log_id, tenant_id, order_id in ((log_a, TENANT_A, order_a), (log_b, TENANT_B, order_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO order_status_log ("
+                            "id, created_at, tenant_id, order_id, from_status, to_status, "
+                            "platform_status, source"
+                            ") VALUES ("
+                            ":id, now(), :tid, :order, NULL, 'PAID', 'READY_TO_SHIP', 'SYSTEM')"
+                        ),
+                        {"id": log_id, "tid": tenant_id, "order": order_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(tenant_id: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (
+                    (
+                        await session.execute(
+                            text("SELECT id FROM order_status_log WHERE id IN (:a, :b)"),
+                            {"a": log_a, "b": log_b},
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_log() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM order_status_log WHERE id = :id"), {"id": log_a})
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        assert _run(_visible(TENANT_A)) == {log_a}
+        assert _run(_visible(TENANT_B)) == {log_b}
+        with pytest.raises(Exception):  # noqa: B017 - 状态日志只追加，应用角色没有 DELETE
+            _run(_delete_log())

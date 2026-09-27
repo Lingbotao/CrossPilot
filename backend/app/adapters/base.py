@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any, Generic, TypeVar
 
 from app.adapters.errors import AdapterError, RetryDecision, classify_platform_error
+from app.engines.order_status import UNIFIED_STATUS_CODES
 
 T = TypeVar("T")
 
@@ -186,7 +187,10 @@ class PlatformAdapter(ABC):
         )
 
     def unified_status(self, platform_status: str) -> str:
-        return self.status_mapping().get(platform_status, "PAID")
+        mapped = self.status_mapping().get(platform_status)
+        if mapped is None or mapped not in UNIFIED_STATUS_CODES:
+            return ""
+        return mapped
 
     def _later(self, milestone: str, _cred: CredentialView) -> AdapterError:
         return AdapterError(

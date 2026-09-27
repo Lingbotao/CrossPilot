@@ -1,6 +1,7 @@
-"""店铺订单增量同步（M2-05）。
+"""店铺订单增量同步（M2-05 / M2-06）。
 
 手动触发和 Beat 走同一条入库路径，幂等键相同，所以两个通道只会留下一行。
+入库前按映射表收成九态；状态发生变化才写 ``order_status_log``。
 没有显式时间范围时，窗口从高水位向前重叠；分页没拉完就记下平台游标，下次接着拉。
 显式补拉只入库，不移动高水位。
 """
@@ -22,9 +23,10 @@ from app.core.context import get_trace_id
 from app.core.errors import ParamInvalidError
 from app.core.logging import get_logger
 from app.db.session import owner_session_scope
+from app.engines.order_status import DecisionKind
 from app.models.enums import ShopStatus, SyncStatus, SyncTrigger
 from app.models.platform import PlatformApiLog, Shop, SyncTask
-from app.repositories.order import SalesOrderRepository, ShopSyncCursorRepository
+from app.repositories.order import ShopSyncCursorRepository
 from app.repositories.platform import (
     PlatformApiLogRepository,
     ShopCredentialRepository,
@@ -33,6 +35,7 @@ from app.repositories.platform import (
 )
 from app.schemas.common import money_to_str
 from app.services.credential_service import view_from_row
+from app.services.order_status import OrderStatusService
 from app.sync_engine.cursor import (
     OrderSyncWindow,
     PullResult,
@@ -60,7 +63,6 @@ class SyncRun:
 class OrderSyncService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.orders = SalesOrderRepository(session)
         self.cursors = ShopSyncCursorRepository(session)
         self.shops = ShopRepository(session)
         self.credentials = ShopCredentialRepository(session)
@@ -249,8 +251,9 @@ class OrderSyncService:
         return await pull_order_pages(fetch, start_cursor=start_cursor, max_pages=policy.order_max_pages)
 
     async def _ingest(self, shop: Shop, orders: list[UnifiedOrder]) -> dict[str, int]:
-        inserted = updated = skipped = failed = 0
+        inserted = updated = skipped = failed = rejected = unmapped = 0
         bloom = get_bloom()
+        status_book = OrderStatusService(self.session)
         for order in orders:
             key = order_idempotency_key(shop.platform_code, shop.id, order.platform_order_id)
             try:
@@ -258,7 +261,7 @@ class OrderSyncService:
             except StoreUnavailable:
                 log.warning("order_bloom_unavailable", shop_id=shop.id)
             try:
-                action = await self.orders.upsert(shop, order)
+                action, decision = await status_book.ingest_order(shop, order)
             except Exception:
                 log.exception("order_ingest_failed", shop_id=shop.id, platform_order_id=order.platform_order_id)
                 failed += 1
@@ -269,12 +272,23 @@ class OrderSyncService:
                 updated += 1
             else:
                 skipped += 1
+            if decision is not None and decision.kind == DecisionKind.REJECT:
+                rejected += 1
+            if decision is not None and decision.unmapped:
+                unmapped += 1
             if action is not WriteAction.SKIP:
                 try:
                     await remember(bloom, key)
                 except StoreUnavailable:
                     log.warning("order_bloom_unavailable", shop_id=shop.id)
-        return {"inserted": inserted, "updated": updated, "skipped": skipped, "failed": failed}
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "status_rejected": rejected,
+            "status_unmapped": unmapped,
+        }
 
     async def _fail(
         self,
@@ -294,6 +308,8 @@ class OrderSyncService:
             "updated": 0,
             "skipped": 0,
             "failed": 0,
+            "status_rejected": 0,
+            "status_unmapped": 0,
             "pages": 0,
             "first_order": None,
         }

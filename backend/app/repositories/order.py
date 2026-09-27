@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -9,13 +10,18 @@ from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 
 from app.adapters.base import UnifiedOrder
-from app.models.order import ORDER_MODULE, OrderItem, SalesOrder, ShopSyncCursor
+from app.engines.order_status import DecisionKind, StatusDecision
+from app.models.order import ORDER_MODULE, OrderItem, OrderStatusLog, SalesOrder, ShopSyncCursor
 from app.models.platform import Shop
 from app.repositories.base import BaseRepository
 from app.sync_engine.cursor import CursorCheckpoint
 from app.sync_engine.idempotency import WriteAction, decide_write, order_idempotency_key
 
 _PLACES = Decimal("0.000001")
+_PAID_OR_LATER = frozenset({"PAID", "SHIPPED", "DELIVERED", "COMPLETED"})
+_SHIPPED_OR_LATER = frozenset({"SHIPPED", "DELIVERED", "COMPLETED"})
+_DELIVERED_OR_LATER = frozenset({"DELIVERED", "COMPLETED"})
+StatusResolver = Callable[[str | None], StatusDecision]
 
 
 def _money(value: Decimal) -> Decimal:
@@ -35,34 +41,43 @@ class SalesOrderRepository(BaseRepository[SalesOrder]):
         stmt = self.base_select().where(SalesOrder.idempotency_key == key)
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def upsert(self, shop: Shop, order: UnifiedOrder) -> WriteAction:
+    async def upsert(
+        self,
+        shop: Shop,
+        order: UnifiedOrder,
+        *,
+        resolve: StatusResolver,
+    ) -> tuple[WriteAction, StatusDecision | None]:
         key = order_idempotency_key(shop.platform_code, shop.id, order.platform_order_id)
         existing = await self.get_by_key(key)
         action = decide_write(None if existing is None else existing.platform_updated_at, order.updated_at)
         if action is WriteAction.SKIP:
-            return action
+            return action, None
         try:
             async with self.session.begin_nested():
                 if existing is None:
-                    row = _new_order(shop, order, key)
+                    decision = resolve(None)
+                    row = _new_order(shop, order, key, decision)
                     self.session.add(row)
                     await self.session.flush()
                     await self._replace_items(row, order)
-                    return WriteAction.INSERT
-                _assign(existing, order)
+                    return WriteAction.INSERT, decision
+                decision = resolve(existing.unified_status)
+                _apply_status(existing, order, decision)
                 await self._replace_items(existing, order)
                 await self.session.flush()
-                return WriteAction.UPDATE
+                return WriteAction.UPDATE, decision
         except IntegrityError:
             raced = await self.get_by_key(key)
             if raced is None:
                 raise
             if decide_write(raced.platform_updated_at, order.updated_at) is not WriteAction.UPDATE:
-                return WriteAction.SKIP
-            _assign(raced, order)
+                return WriteAction.SKIP, None
+            decision = resolve(raced.unified_status)
+            _apply_status(raced, order, decision)
             await self._replace_items(raced, order)
             await self.session.flush()
-            return WriteAction.UPDATE
+            return WriteAction.UPDATE, decision
 
     async def _replace_items(self, row: SalesOrder, order: UnifiedOrder) -> None:
         await self.session.execute(
@@ -116,6 +131,46 @@ class ShopSyncCursorRepository(BaseRepository[ShopSyncCursor]):
         return row
 
 
+class OrderStatusLogRepository(BaseRepository[OrderStatusLog]):
+    model = OrderStatusLog
+
+    async def append(
+        self,
+        *,
+        tenant_id: int,
+        order_id: int,
+        from_status: str | None,
+        to_status: str,
+        platform_status: str,
+        operator_id: int | None,
+        source: str,
+        remark: str | None,
+    ) -> OrderStatusLog:
+        row = OrderStatusLog(
+            tenant_id=tenant_id,
+            created_at=datetime.now(UTC),
+            order_id=order_id,
+            from_status=from_status,
+            to_status=to_status,
+            platform_status=(platform_status or "")[:64],
+            operator_id=operator_id,
+            source=source,
+            remark=remark,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def list_for_order(self, order_id: int) -> list[OrderStatusLog]:
+        stmt = (
+            self.base_select()
+            .where(OrderStatusLog.order_id == order_id)
+            .order_by(OrderStatusLog.created_at.asc(), OrderStatusLog.id.asc())
+            .limit(200)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+
 def _line_amount(order: UnifiedOrder) -> Decimal:
     if not order.items:
         return _money(order.total_amount)
@@ -140,41 +195,50 @@ def _ship_to(order: UnifiedOrder) -> dict[str, str] | None:
     return {"country": order.buyer_country}
 
 
-def _new_order(shop: Shop, order: UnifiedOrder, key: str) -> SalesOrder:
+def _new_order(shop: Shop, order: UnifiedOrder, key: str, decision: StatusDecision) -> SalesOrder:
     row = SalesOrder(
         tenant_id=shop.tenant_id,
         shop_id=shop.id,
         platform_code=shop.platform_code,
         platform_order_id=order.platform_order_id,
         idempotency_key=key,
-        platform_status=order.platform_status or order.unified_status,
-        unified_status=order.unified_status,
-        buyer_info=_buyer(order),
-        ship_to=_ship_to(order),
+        platform_status="",
+        unified_status=decision.to_status.value,
         currency=order.currency,
-        item_amount=_line_amount(order),
+        item_amount=Decimal("0.000000"),
         shipping_amount=Decimal("0.000000"),
         tax_amount=Decimal("0.000000"),
         discount_amount=Decimal("0.000000"),
-        total_amount=_money(order.total_amount),
-        platform_updated_at=_as_utc(order.updated_at),
-        paid_at=_as_utc(order.paid_at) if order.paid_at else None,
-        raw_payload=order.raw,
+        total_amount=Decimal("0.000000"),
     )
+    _apply_status(row, order, decision)
     return row
 
 
-def _assign(row: SalesOrder, order: UnifiedOrder) -> None:
-    row.platform_status = order.platform_status or order.unified_status
-    row.unified_status = order.unified_status
+def _apply_status(row: SalesOrder, order: UnifiedOrder, decision: StatusDecision) -> None:
+    row.platform_status = (order.platform_status or decision.to_status.value)[:64]
+    row.unified_status = decision.to_status.value
     row.buyer_info = _buyer(order)
     row.ship_to = _ship_to(order)
     row.currency = order.currency
     row.item_amount = _line_amount(order)
     row.total_amount = _money(order.total_amount)
     row.platform_updated_at = _as_utc(order.updated_at)
-    row.paid_at = _as_utc(order.paid_at) if order.paid_at else None
+    if order.paid_at is not None:
+        row.paid_at = _as_utc(order.paid_at)
     row.raw_payload = order.raw
+    if decision.kind == DecisionKind.APPLY:
+        _stamp(row, decision.to_status.value, order)
 
 
-__all__ = ["SalesOrderRepository", "ShopSyncCursorRepository"]
+def _stamp(row: SalesOrder, status: str, order: UnifiedOrder) -> None:
+    moment = _as_utc(order.updated_at)
+    if status in _PAID_OR_LATER and row.paid_at is None:
+        row.paid_at = _as_utc(order.paid_at) if order.paid_at else moment
+    if status in _SHIPPED_OR_LATER and row.shipped_at is None:
+        row.shipped_at = moment
+    if status in _DELIVERED_OR_LATER and row.delivered_at is None:
+        row.delivered_at = moment
+
+
+__all__ = ["OrderStatusLogRepository", "SalesOrderRepository", "ShopSyncCursorRepository"]

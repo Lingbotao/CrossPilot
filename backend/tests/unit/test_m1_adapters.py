@@ -70,7 +70,7 @@ def test_four_platforms_exchange_and_parse_decimal_orders() -> None:
             order = page.items[0]
             assert order.platform_order_id == order_id
             assert order.currency == currency
-            assert order.unified_status == "TO_SHIP"
+            assert order.unified_status == "PAID"
             assert isinstance(order.total_amount, Decimal)
             assert f"{order.total_amount:.6f}" == amount
             with_error = adapter.normalize_error(AdapterError("x", platform=platform, decision=RetryDecision.FAIL_FAST))

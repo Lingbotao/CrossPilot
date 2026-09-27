@@ -216,7 +216,7 @@ def _order(order_id: str) -> UnifiedOrder:
         shop_id="1",
         platform_order_id=order_id,
         platform_status="READY_TO_SHIP",
-        unified_status="TO_SHIP",
+        unified_status="PAID",
         buyer_name=None,
         buyer_country=None,
         currency="SGD",
