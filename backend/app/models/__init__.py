@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from app.db.base import Base
 from app.models.audit import AuditLog, LoginLog
-from app.models.config import PlatformStatusMapping
+from app.models.config import PlatformRateLimit, PlatformStatusMapping
 from app.models.enums import (
     AuditAction,
     DataScopeType,
@@ -77,6 +77,7 @@ __all__ = [
     "ReturnOrder",
     "ShopSyncCursor",
     "PlatformStatusMapping",
+    "PlatformRateLimit",
     # 枚举
     "TenantPlan",
     "TenantStatus",

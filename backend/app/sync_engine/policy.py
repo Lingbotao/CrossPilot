@@ -1,7 +1,7 @@
 """同步引擎策略。
 
 税率、配额、退避和熔断窗口都从这里读。业务代码不写 0.5、300、1/4/16 这类字面量。
-平台 QPS 不在本文件里，仍由 ``adapters/quotas.py``（以及以后的 ``platform_rate_limit`` 表）提供。
+平台 QPS 不在本文件里。没有配置行时用 ``adapters/quotas.py``，有行时用 ``platform_rate_limit``。
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ class SyncPolicy:
     order_initial_lookback_seconds: int = 86400
     order_interval_seconds: int = 60
     order_max_pages: int = 20
+    daily_counter_ttl_seconds: int = 172800
 
     def __post_init__(self) -> None:
         if not 0 < self.slowdown_ratio <= 1:
@@ -73,6 +74,8 @@ class SyncPolicy:
             raise ValueError("order_interval_seconds 至少为 1 秒")
         if self.order_max_pages < 1:
             raise ValueError("order_max_pages 至少为 1")
+        if self.daily_counter_ttl_seconds < 86400:
+            raise ValueError("daily_counter_ttl_seconds 至少要覆盖一个 UTC 日")
 
 
 def policy_from_settings(source: Settings | None = None) -> SyncPolicy:
@@ -99,6 +102,7 @@ def policy_from_settings(source: Settings | None = None) -> SyncPolicy:
         order_initial_lookback_seconds=source.sync_order_initial_lookback_seconds,
         order_interval_seconds=source.sync_order_interval_seconds,
         order_max_pages=source.sync_order_max_pages,
+        daily_counter_ttl_seconds=source.sync_daily_counter_ttl_seconds,
     )
 
 

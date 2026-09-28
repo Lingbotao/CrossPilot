@@ -20,5 +20,5 @@ __all__ = ["celery_app"]
 
 @celery_app.task(name="batch.placeholder")
 def placeholder() -> dict[str, Any]:
-    """占位：M2 起替换为真实的批量任务。"""
-    return {"status": "not_implemented", "until": "M2"}
+    """占位。M2 批量发货走订单接口；异步任务中心的进度轮询留到 M6。"""
+    return {"status": "not_implemented", "until": "M6"}

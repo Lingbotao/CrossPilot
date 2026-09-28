@@ -454,6 +454,31 @@ export interface UpsertOrderStatusMapping {
   unified_status: UnifiedStatusValue;
 }
 
+export type RateLimitSource = 'table' | 'default';
+
+export interface PlatformRateLimit {
+  id: string | null;
+  platform_code: string;
+  dimension: string;
+  qps: number;
+  burst: number;
+  batch_limit: number;
+  daily_quota: number | null;
+  concurrency: number | null;
+  source: RateLimitSource;
+  updated_at: string | null;
+}
+
+export interface UpsertPlatformRateLimit {
+  platform_code: string;
+  dimension: string;
+  qps: number;
+  burst: number;
+  batch_limit: number;
+  daily_quota: number | null;
+  concurrency: number | null;
+}
+
 export interface OrderStatusLog {
   id: string;
   order_id: string;

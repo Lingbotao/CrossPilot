@@ -14,7 +14,9 @@ from app.adapters.ratelimit import (
     TokenBucketLimiter,
     bucket_key,
     decode_bucket,
+    decode_day,
     encode_bucket,
+    encode_day,
 )
 from app.sync_engine.errors import StoreUnavailable
 from app.sync_engine.policy import SyncPolicy
@@ -34,7 +36,8 @@ class Clock:
 
 def _limiter(policy: SyncPolicy | None = None, clock: Clock | None = None) -> TokenBucketLimiter:
     store = JsonStateStore(MemoryJsonKv(), ttl_seconds=60, encode=encode_bucket, decode=decode_bucket)
-    return TokenBucketLimiter(store, policy or SyncPolicy(), clock=clock)
+    day = JsonStateStore(MemoryJsonKv(), ttl_seconds=172800, encode=encode_day, decode=decode_day)
+    return TokenBucketLimiter(store, policy or SyncPolicy(), clock=clock, day_store=day)
 
 
 def test_bucket_key_follows_dimension() -> None:
@@ -94,6 +97,21 @@ async def test_repeated_429_halves_rate_until_floor_then_recovers() -> None:
     assert await limiter.record_success("shopee", "1", spec) == pytest.approx(0.5)
     assert await limiter.record_success("shopee", "1", spec) == pytest.approx(0.5)
     assert await limiter.record_success("shopee", "1", spec) == pytest.approx(1)
+
+
+async def test_daily_quota_stops_and_app_dimension_shares_the_counter() -> None:
+    clock = Clock(datetime(2026, 1, 1, 12, tzinfo=UTC))
+    limiter = _limiter(clock=clock)
+    shop_spec = RateLimitSpec(qps=100, burst=10, dimension="shop", batch_limit=1, daily_quota=2)
+    assert (await limiter.try_acquire("shopee", "1", shop_spec)).allowed
+    assert (await limiter.try_acquire("shopee", "1", shop_spec)).allowed
+    denied = await limiter.try_acquire("shopee", "1", shop_spec)
+    assert denied.allowed is False
+    assert denied.retry_after_seconds > 1
+    assert (await limiter.try_acquire("shopee", "2", shop_spec)).allowed
+    app_spec = RateLimitSpec(qps=100, burst=10, dimension="app", batch_limit=1, daily_quota=1)
+    assert (await limiter.try_acquire("lazada", "a", app_spec)).allowed
+    assert not (await limiter.try_acquire("lazada", "b", app_spec)).allowed
 
 
 async def test_store_outage_denies_instead_of_calling_platform() -> None:

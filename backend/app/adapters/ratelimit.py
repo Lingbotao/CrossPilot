@@ -1,7 +1,7 @@
 """Redis 令牌桶（M2-01）。
 
 每个「平台 × 店铺」一把桶，键为 ``rl:{platform}:{shop_id}``。
-配额来自调用方传入的 ``RateLimitSpec``（``quotas.py`` 或以后的配置表），本文件不写 QPS。
+配额来自调用方传入的 ``RateLimitSpec``（``quotas.py``，或 ``platform_rate_limit`` 表覆盖后的结果），本文件不写 QPS。
 维度为 ``app`` / ``per_app`` 时，同一平台的店铺共用一把桶。
 
 连续收到 429 时把有效 QPS 乘以降速比例，到底线后不再降；连续成功达到阈值后再升一档。
@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.adapters.base import RateLimitSpec
 from app.core.logging import get_logger
@@ -44,6 +44,33 @@ class LimitDecision:
 def bucket_key(platform: str, shop_id: str, spec: RateLimitSpec) -> str:
     scope = "app" if spec.dimension in _APP_DIMENSIONS else shop_id
     return f"rl:{platform.strip().lower()}:{scope}"
+
+
+@dataclass(frozen=True, slots=True)
+class DayCount:
+    count: int
+
+
+def day_key(platform: str, shop_id: str, spec: RateLimitSpec, now: datetime) -> str:
+    current = now.astimezone(UTC) if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    return f"{bucket_key(platform, shop_id, spec)}:day:{current:%Y%m%d}"
+
+
+def seconds_until_next_utc_day(now: datetime) -> float:
+    current = now.astimezone(UTC) if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    nxt = datetime(current.year, current.month, current.day, tzinfo=UTC) + timedelta(days=1)
+    return max(1.0, (nxt - current).total_seconds())
+
+
+def encode_day(state: DayCount) -> str:
+    return json.dumps({"count": state.count}, separators=(",", ":"))
+
+
+def decode_day(raw: str) -> DayCount:
+    data = json.loads(raw)
+    if not isinstance(data, dict) or "count" not in data:
+        raise ValueError("日配额计数损坏")
+    return DayCount(count=int(data["count"]))
 
 
 def _capacity(burst: int, penalty: float) -> float:
@@ -156,12 +183,28 @@ class TokenBucketLimiter:
         policy: SyncPolicy,
         *,
         clock: Callable[[], datetime] | None = None,
+        day_store: JsonStateStore | None = None,
     ) -> None:
         self._store = store
         self._policy = policy
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._day_store = day_store
 
     async def try_acquire(self, platform: str, shop_id: str, spec: RateLimitSpec) -> LimitDecision:
+        if spec.daily_quota is not None:
+            blocked = await self._daily_block(platform, shop_id, spec)
+            if blocked is not None:
+                return blocked
+        decision = await self._take_token(platform, shop_id, spec)
+        if decision.allowed and spec.daily_quota is not None:
+            try:
+                await self._count_daily(platform, shop_id, spec)
+            except StoreUnavailable:
+                log.warning("daily_quota_store_unavailable", platform=platform, shop_id=shop_id)
+                return LimitDecision(allowed=False, retry_after_seconds=1.0, penalty=decision.penalty)
+        return decision
+
+    async def _take_token(self, platform: str, shop_id: str, spec: RateLimitSpec) -> LimitDecision:
         key = bucket_key(platform, shop_id, spec)
         holder: list[LimitDecision] = []
 
@@ -176,6 +219,38 @@ class TokenBucketLimiter:
             log.warning("rate_limit_store_unavailable", platform=platform, shop_id=shop_id)
             return LimitDecision(allowed=False, retry_after_seconds=1.0, penalty=1.0)
         return holder[-1]
+
+    async def _daily_block(self, platform: str, shop_id: str, spec: RateLimitSpec) -> LimitDecision | None:
+        quota = spec.daily_quota
+        if quota is None:
+            return None
+        if self._day_store is None:
+            log.warning("daily_quota_store_missing", platform=platform, shop_id=shop_id)
+            return LimitDecision(allowed=False, retry_after_seconds=1.0, penalty=1.0)
+        try:
+            current = await self._day_store.read(day_key(platform, shop_id, spec, self._clock()))
+        except StoreUnavailable:
+            log.warning("daily_quota_store_unavailable", platform=platform, shop_id=shop_id)
+            return LimitDecision(allowed=False, retry_after_seconds=1.0, penalty=1.0)
+        used = 0 if current is None or current.count < 0 else current.count
+        if used >= quota:
+            return LimitDecision(
+                allowed=False,
+                retry_after_seconds=seconds_until_next_utc_day(self._clock()),
+                penalty=1.0,
+            )
+        return None
+
+    async def _count_daily(self, platform: str, shop_id: str, spec: RateLimitSpec) -> None:
+        if self._day_store is None:
+            raise StoreUnavailable("日配额计数器未装配")
+        key = day_key(platform, shop_id, spec, self._clock())
+
+        def mutate(state: DayCount | None) -> DayCount:
+            current = 0 if state is None or state.count < 0 else state.count
+            return DayCount(count=current + 1)
+
+        await self._day_store.update(key, mutate)
 
     async def record_throttled(self, platform: str, shop_id: str, spec: RateLimitSpec) -> float:
         key = bucket_key(platform, shop_id, spec)
@@ -208,12 +283,17 @@ class TokenBucketLimiter:
 
 __all__ = [
     "BucketState",
+    "DayCount",
     "LimitDecision",
     "TokenBucketLimiter",
     "apply_acquire",
     "apply_success",
     "apply_throttle",
     "bucket_key",
+    "day_key",
     "decode_bucket",
+    "decode_day",
     "encode_bucket",
+    "encode_day",
+    "seconds_until_next_utc_day",
 ]

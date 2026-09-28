@@ -109,12 +109,17 @@ class PageResult(Generic[T]):
 
 @dataclass(frozen=True, slots=True)
 class RateLimitSpec:
-    """限流规格。数值来自 ``quotas`` 配置，不在业务代码里写死。"""
+    """限流规格。数值来自 ``quotas`` 或 ``platform_rate_limit``，不在业务代码里写死。
+
+    ``daily_quota`` 为空表示不设 UTC 日上限。``concurrency`` 只随配额保存，令牌桶不读取它。
+    """
 
     qps: int
     burst: int
     dimension: str
     batch_limit: int
+    daily_quota: int | None = None
+    concurrency: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

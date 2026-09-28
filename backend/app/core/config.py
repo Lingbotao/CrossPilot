@@ -82,7 +82,8 @@ class Settings(BaseSettings):
     shop_sync_stale_minutes: int = 60
 
     # ------------------------------------------------------------------ 同步引擎（M2，约束 C5）
-    # 平台 QPS 不在这里，见 adapters/quotas.py。下面是退避、降速和熔断策略。
+    # 平台 QPS 不在这里。默认值在 adapters/quotas.py，运营覆盖写在 platform_rate_limit。
+    # 下面是退避、降速、熔断，以及日配额计数器要活过一个 UTC 日的保留时间。
     sync_slowdown_ratio: float = 0.5
     sync_penalty_floor: float = 0.25
     sync_recover_after_successes: int = 20
@@ -96,6 +97,7 @@ class Settings(BaseSettings):
     sync_bloom_hash_count: int = 7
     sync_beat_lock_ttl_seconds: int = 240
     sync_state_ttl_seconds: int = 3600
+    sync_daily_counter_ttl_seconds: int = 172800
     # 订单增量：向前重叠，避免平台延迟写入造成漏单。首次没有游标时回看一整天。
     sync_order_overlap_seconds: int = 300
     sync_order_initial_lookback_seconds: int = 86400

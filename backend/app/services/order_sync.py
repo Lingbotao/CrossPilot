@@ -36,6 +36,7 @@ from app.repositories.platform import (
 from app.schemas.common import money_to_str
 from app.services.credential_service import view_from_row
 from app.services.order_status import OrderStatusService
+from app.services.rate_limit_config import RateLimitConfigService
 from app.services.shop_health import resolve_sync_status
 from app.sync_engine.cursor import (
     OrderSyncWindow,
@@ -219,7 +220,7 @@ class OrderSyncService:
             )
         adapter = adapter_registry.get(platform)
         limiter = get_rate_limiter()
-        spec = adapter.rate_limit()
+        spec = await RateLimitConfigService(self.session).resolve(platform)
 
         async def fetch(cursor: str | None) -> PageResult[UnifiedOrder]:
             try:

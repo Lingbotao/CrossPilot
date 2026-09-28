@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.adapters.ratelimit import TokenBucketLimiter, decode_bucket, encode_bucket
+from app.adapters.ratelimit import TokenBucketLimiter, decode_bucket, decode_day, encode_bucket, encode_day
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.sync_engine.errors import StoreUnavailable
@@ -76,7 +76,13 @@ def get_rate_limiter() -> TokenBucketLimiter:
             encode=encode_bucket,
             decode=decode_bucket,
         )
-        _limiter = TokenBucketLimiter(store, policy)
+        day_store = JsonStateStore(
+            kv,
+            ttl_seconds=policy.daily_counter_ttl_seconds,
+            encode=encode_day,
+            decode=decode_day,
+        )
+        _limiter = TokenBucketLimiter(store, policy, day_store=day_store)
     return _limiter
 
 

@@ -115,6 +115,16 @@ class JsonStateStore:
         self._encode = encode
         self._decode = decode
 
+    async def read(self, key: str) -> Any | None:
+        raw = await self._kv.get(key)
+        if raw is None:
+            return None
+        try:
+            return self._decode(raw)
+        except (ValueError, KeyError, TypeError):
+            log.warning("sync_state_corrupt", key=key)
+            return None
+
     async def update(self, key: str, mutator: Callable[[Any | None], Any]) -> Any:
         for _ in range(_MAX_ATTEMPTS):
             raw = await self._kv.get(key)
