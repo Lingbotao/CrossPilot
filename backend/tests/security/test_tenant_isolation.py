@@ -8,7 +8,7 @@ PRD 13.2 第 4 条：**每个新增租户表都必须同步补越权用例**。
 CI 与 `docker compose up` 之后用 ``make test-security`` 跑。
 
 订单表 ``sales_order``、状态日志 ``order_status_log``、发货单 ``shipment`` 与费用 ``order_fee``
-有单独用例：租户 A 看不到租户 B 的行。
+有单独用例：租户 A 看不到租户 B 的行。商品主数据 ``spu`` / ``sku`` 同样单独覆盖。
 """
 
 from __future__ import annotations
@@ -759,3 +759,64 @@ class TestOrderDeskIsolation:
         assert _run(_visible(ret_sql, TENANT_B, ret_a, ret_b)) == {ret_b}
         with pytest.raises(Exception):  # noqa: B017 - 备注只追加，应用角色没有 DELETE
             _run(_delete_note())
+
+
+class TestProductMasterIsolation:
+    def test_tenant_cannot_read_another_tenants_spu_or_sku(self, migrated: None) -> None:
+        spu_a = 960000000000000000 + time.time_ns() % 10**12
+        spu_b = spu_a + 1
+        sku_a = spu_a + 2
+        sku_b = spu_a + 3
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for spu_id, tenant_id, title in (
+                    (spu_a, TENANT_A, "product-a"),
+                    (spu_b, TENANT_B, "product-b"),
+                ):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, :title, 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id, "title": title},
+                    )
+                for sku_id, tenant_id, spu_id, code in (
+                    (sku_a, TENANT_A, spu_a, f"SKU-A-{sku_a}"),
+                    (sku_b, TENANT_B, spu_b, f"SKU-B-{sku_b}"),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku ("
+                            "id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm"
+                            ") VALUES (:id, :tid, :spu, :code, 100, 10, 10, 10)"
+                        ),
+                        {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": code},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_spu() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM spu WHERE id = :id"), {"id": spu_a})
+                await session.commit()
+            await engine.dispose()
+
+        spu_sql = "SELECT id FROM spu WHERE id IN (:a, :b)"
+        sku_sql = "SELECT id FROM sku WHERE id IN (:a, :b)"
+        _run(_seed())
+        assert _run(_visible(spu_sql, TENANT_A, spu_a, spu_b)) == {spu_a}
+        assert _run(_visible(spu_sql, TENANT_B, spu_a, spu_b)) == {spu_b}
+        assert _run(_visible(sku_sql, TENANT_A, sku_a, sku_b)) == {sku_a}
+        assert _run(_visible(sku_sql, TENANT_B, sku_a, sku_b)) == {sku_b}
+        with pytest.raises(Exception):  # noqa: B017 - 商品主数据只软删除，应用角色没有 DELETE
+            _run(_delete_spu())

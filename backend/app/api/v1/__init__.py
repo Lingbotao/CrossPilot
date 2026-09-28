@@ -17,6 +17,7 @@ from app.api.v1 import (
     members,
     order_status,
     orders,
+    products,
     rate_limits,
     roles,
     shops,
@@ -36,6 +37,7 @@ api_router.include_router(sync_tasks.router)
 api_router.include_router(order_status.router)
 api_router.include_router(rate_limits.router)
 api_router.include_router(orders.router)
+api_router.include_router(products.router)
 api_router.include_router(webhooks.router)
 
 __all__ = ["api_router"]

@@ -109,6 +109,7 @@ class AuditAction:
     DATA_DELETE = "DATA_DELETE"
     DATA_EXPORT = "DATA_EXPORT"
     COST_UPDATE = "COST_UPDATE"
+    PRODUCT_STATUS = "PRODUCT_STATUS"
     ROLE_CHANGE = "ROLE_CHANGE"
     SYSTEM_CONFIG = "SYSTEM_CONFIG"
 
@@ -130,6 +131,7 @@ class AuditAction:
         DATA_DELETE,
         DATA_EXPORT,
         COST_UPDATE,
+        PRODUCT_STATUS,
         ROLE_CHANGE,
         SYSTEM_CONFIG,
     )

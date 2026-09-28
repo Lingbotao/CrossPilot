@@ -7,7 +7,7 @@
 | 10xxx | 通用        | 10001 参数校验失败，10002 资源不存在              |
 | 20xxx | 认证与租户  | 20001 未登录，20002 权限不足，20003 租户已停用    |
 | 30xxx | 平台与同步  | 30001 平台不支持，30002 授权失败，30003 平台限流  |
-| 40xxx | 商品        | 40001 SKU 编码重复，40002 合规校验未通过          |
+| 40xxx | 商品        | 40001 SKU 编码重复，40004 变体超过 100          |
 | 50xxx | 订单        | 50001 订单不存在，50002 状态不允许该操作          |
 | 60xxx | 库存        | 60001 库存不足，60002 库存同步失败                |
 | 70xxx | 财务        | 70001 汇率缺失，70002 对账不平                    |
@@ -63,6 +63,7 @@ class ErrorCode(IntEnum):
     SKU_CODE_DUPLICATED = 40001
     COMPLIANCE_CHECK_FAILED = 40002
     LISTING_STATE_INVALID = 40003
+    SPU_VARIANT_LIMIT = 40004
     SHOP_GRANT_EXPIRED = 40201  # PRD 10.2 前端约定：40201 引导重新授权
 
     # ---- 50xxx 订单 ----
@@ -123,6 +124,7 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.SKU_CODE_DUPLICATED: 409,
     ErrorCode.COMPLIANCE_CHECK_FAILED: 400,
     ErrorCode.LISTING_STATE_INVALID: 409,
+    ErrorCode.SPU_VARIANT_LIMIT: 409,
     ErrorCode.SHOP_GRANT_EXPIRED: 401,
     ErrorCode.ORDER_NOT_FOUND: 404,
     ErrorCode.ORDER_STATE_INVALID: 409,

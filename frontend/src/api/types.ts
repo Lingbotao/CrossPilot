@@ -71,6 +71,7 @@ export const ErrorCode = {
   SKU_CODE_DUPLICATED: 40001,
   COMPLIANCE_CHECK_FAILED: 40002,
   LISTING_STATE_INVALID: 40003,
+  SPU_VARIANT_LIMIT: 40004,
   /** 店铺授权过期 —— 前端据此引导用户重新授权 */
   SHOP_GRANT_EXPIRED: 40201,
 
@@ -667,4 +668,102 @@ export interface OrderAddressWrite {
   city?: string;
   line1?: string;
   postal_code?: string;
+}
+
+/** ---------- 商品主数据（M3-01） ---------- */
+
+export const ProductStatus = {
+  DRAFT: 'DRAFT',
+  ON_SALE: 'ON_SALE',
+  STOPPED: 'STOPPED',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+  VIOLATION_OFF: 'VIOLATION_OFF',
+} as const;
+
+export type ProductStatusValue = (typeof ProductStatus)[keyof typeof ProductStatus];
+
+export interface SpuListQuery {
+  cursor?: string;
+  limit?: number;
+  status?: ProductStatusValue;
+  q?: string;
+}
+
+export interface SpuListItem {
+  id: string;
+  title: string;
+  brand: string | null;
+  status: ProductStatusValue;
+  sku_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkuView {
+  id: string;
+  spu_id: string;
+  sku_code: string;
+  barcode: string | null;
+  spec_attrs: Record<string, string>;
+  weight_g: string;
+  length_cm: string;
+  width_cm: string;
+  height_cm: string;
+  purchase_price: string | null;
+  currency: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpuDetail {
+  id: string;
+  title: string;
+  brand: string | null;
+  material: string | null;
+  purpose: string | null;
+  status: ProductStatusValue;
+  skus: SkuView[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkuWrite {
+  sku_code: string;
+  barcode?: string | null;
+  spec_attrs?: Record<string, string>;
+  weight_g: string;
+  length_cm: string;
+  width_cm: string;
+  height_cm: string;
+  purchase_price?: string | null;
+  currency?: string | null;
+}
+
+export interface SpuCreate {
+  title: string;
+  brand?: string | null;
+  material?: string | null;
+  purpose?: string | null;
+  status?: ProductStatusValue;
+  skus?: SkuWrite[];
+}
+
+export interface SpuPatch {
+  title?: string;
+  brand?: string | null;
+  material?: string | null;
+  purpose?: string | null;
+  status?: ProductStatusValue;
+}
+
+export interface SkuPatch {
+  sku_code?: string;
+  barcode?: string | null;
+  spec_attrs?: Record<string, string>;
+  weight_g?: string;
+  length_cm?: string;
+  width_cm?: string;
+  height_cm?: string;
+  purchase_price?: string | null;
+  currency?: string | null;
 }

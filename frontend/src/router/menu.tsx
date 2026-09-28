@@ -26,6 +26,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ExceptionsPage, OrdersPage, ToShipPage } from '@/pages/orders/OrdersPage';
 import { ReturnsPage } from '@/pages/orders/ReturnsPage';
 import { OrderSettingsPage } from '@/pages/orders/SettingsPage';
+import { ProductsPage } from '@/pages/products/ProductsPage';
 import { ShopsPage } from '@/pages/shops/ShopsPage';
 import { AuditPage } from '@/pages/system/AuditPage';
 import { MembersPage } from '@/pages/system/MembersPage';
@@ -134,7 +135,8 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     icon: <AppstoreOutlined />,
     permission: Perm.PRODUCT_READ,
     milestone: 'M3（Week 6–7）',
-    delivered: false,
+    delivered: true,
+    component: ProductsPage,
   },
   {
     key: 'inventory',
