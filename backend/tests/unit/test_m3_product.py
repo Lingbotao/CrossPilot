@@ -344,7 +344,9 @@ async def test_update_sku_keeps_cost_hidden_and_rejects_cleared_measures() -> No
     service.skus.get_or_404 = AsyncMock(return_value=sku)
     hidden = await service.update_sku(
         21,
-        SkuPatch.model_validate({"sku_code": "HAT-1", "barcode": "690", "spec_attrs": {"spec": "红"}, "weight_g": "12"}),
+        SkuPatch.model_validate(
+            {"sku_code": "HAT-1", "barcode": "690", "spec_attrs": {"spec": "红"}, "weight_g": "12"}
+        ),
         actor_id=3,
         can_view_cost=False,
     )

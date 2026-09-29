@@ -820,3 +820,90 @@ class TestProductMasterIsolation:
         assert _run(_visible(sku_sql, TENANT_B, sku_a, sku_b)) == {sku_b}
         with pytest.raises(Exception):  # noqa: B017 - 商品主数据只软删除，应用角色没有 DELETE
             _run(_delete_spu())
+
+
+class TestListingMappingIsolation:
+    def test_tenant_cannot_read_another_tenants_listing_or_category(self, migrated: None) -> None:
+        base = 980000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        spu_a, spu_b = base + 2, base + 3
+        sku_a, sku_b = base + 4, base + 5
+        map_a, map_b = base + 6, base + 7
+        listing_a, listing_b = base + 8, base + 9
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', 'listing', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"seller-{shop_id}"},
+                    )
+                for spu_id, tenant_id in ((spu_a, TENANT_A), (spu_b, TENANT_B)):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, 'listing', 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id},
+                    )
+                for sku_id, tenant_id, spu_id in ((sku_a, TENANT_A, spu_a), (sku_b, TENANT_B, spu_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku ("
+                            "id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm"
+                            ") VALUES (:id, :tid, :spu, :code, 100, 10, 10, 10)"
+                        ),
+                        {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": f"MAP-{sku_id}"},
+                    )
+                for map_id, tenant_id, code in ((map_a, TENANT_A, "tee-a"), (map_b, TENANT_B, "tee-b")):
+                    await session.execute(
+                        text(
+                            "INSERT INTO category_mapping ("
+                            "id, tenant_id, platform_code, site_code, platform_category_id, "
+                            "local_category_code, name"
+                            ") VALUES (:id, :tid, 'shopee', 'SG', '1001', :code, 'T恤')"
+                        ),
+                        {"id": map_id, "tid": tenant_id, "code": code},
+                    )
+                for listing_id, tenant_id, sku_id, shop_id in (
+                    (listing_a, TENANT_A, sku_a, shop_a),
+                    (listing_b, TENANT_B, sku_b, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO listing (id, tenant_id, sku_id, shop_id, status) "
+                            "VALUES (:id, :tid, :sku, :shop, 'DRAFT')"
+                        ),
+                        {"id": listing_id, "tid": tenant_id, "sku": sku_id, "shop": shop_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_listing() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM listing WHERE id = :id"), {"id": listing_a})
+                await session.commit()
+            await engine.dispose()
+
+        listing_sql = "SELECT id FROM listing WHERE id IN (:a, :b)"
+        mapping_sql = "SELECT id FROM category_mapping WHERE id IN (:a, :b)"
+        _run(_seed())
+        assert _run(_visible(listing_sql, TENANT_A, listing_a, listing_b)) == {listing_a}
+        assert _run(_visible(listing_sql, TENANT_B, listing_a, listing_b)) == {listing_b}
+        assert _run(_visible(mapping_sql, TENANT_A, map_a, map_b)) == {map_a}
+        assert _run(_visible(mapping_sql, TENANT_B, map_a, map_b)) == {map_b}
+        with pytest.raises(Exception):  # noqa: B017 - Listing 是主数据，应用角色没有 DELETE
+            _run(_delete_listing())

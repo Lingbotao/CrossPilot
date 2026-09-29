@@ -72,6 +72,8 @@ export const ErrorCode = {
   COMPLIANCE_CHECK_FAILED: 40002,
   LISTING_STATE_INVALID: 40003,
   SPU_VARIANT_LIMIT: 40004,
+  LISTING_PLATFORM_SKU_TAKEN: 40005,
+  CATEGORY_TEMPLATE_DUPLICATED: 40006,
   /** 店铺授权过期 —— 前端据此引导用户重新授权 */
   SHOP_GRANT_EXPIRED: 40201,
 
@@ -766,4 +768,119 @@ export interface SkuPatch {
   height_cm?: string;
   purchase_price?: string | null;
   currency?: string | null;
+}
+
+/** ---------- Listing 映射与类目模板（M3-02） ---------- */
+
+export const ListingStatus = {
+  DRAFT: 'DRAFT',
+  LINKED: 'LINKED',
+  UNLISTED: 'UNLISTED',
+} as const;
+
+export type ListingStatusValue = (typeof ListingStatus)[keyof typeof ListingStatus];
+
+export interface AttrTemplateItem {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+export interface CategoryMappingView {
+  id: string;
+  platform_code: string;
+  site_code: string;
+  platform_category_id: string;
+  local_category_code: string;
+  name: string;
+  attrs_template: AttrTemplateItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CategoryMappingWrite {
+  platform_code: string;
+  site_code: string;
+  platform_category_id: string;
+  local_category_code: string;
+  name: string;
+  attrs_template?: AttrTemplateItem[];
+}
+
+export interface CategoryMappingPatch {
+  platform_code?: string;
+  site_code?: string;
+  platform_category_id?: string;
+  local_category_code?: string;
+  name?: string;
+  attrs_template?: AttrTemplateItem[];
+}
+
+export interface CategoryMappingQuery {
+  cursor?: string;
+  limit?: number;
+  platform_code?: string;
+  site_code?: string;
+  q?: string;
+}
+
+export interface ListingView {
+  id: string;
+  sku_id: string;
+  sku_code: string;
+  shop_id: string;
+  shop_name: string;
+  platform_code: string;
+  site_code: string;
+  category_mapping_id: string | null;
+  local_category_code: string | null;
+  template_name: string | null;
+  platform_product_id: string | null;
+  platform_sku_id: string | null;
+  price: string | null;
+  currency: string | null;
+  attr_values: Record<string, string>;
+  status: ListingStatusValue;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListingWrite {
+  sku_id: string;
+  shop_id: string;
+  category_mapping_id?: string | null;
+  platform_product_id?: string | null;
+  platform_sku_id?: string | null;
+  price?: string | null;
+  currency?: string | null;
+  attr_values?: Record<string, string>;
+  status?: ListingStatusValue | null;
+}
+
+export interface ListingPatch {
+  sku_id?: string;
+  shop_id?: string;
+  category_mapping_id?: string | null;
+  platform_product_id?: string | null;
+  platform_sku_id?: string | null;
+  price?: string | null;
+  currency?: string | null;
+  attr_values?: Record<string, string>;
+  status?: ListingStatusValue | null;
+}
+
+export interface ListingShopOption {
+  id: string;
+  shop_name: string;
+  platform_code: string;
+  site_code: string;
+}
+
+export interface ListingQuery {
+  cursor?: string;
+  limit?: number;
+  sku_id?: string;
+  shop_id?: string;
+  platform_product_id?: string;
+  status?: ListingStatusValue;
 }

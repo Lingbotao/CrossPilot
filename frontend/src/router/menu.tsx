@@ -26,6 +26,8 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ExceptionsPage, OrdersPage, ToShipPage } from '@/pages/orders/OrdersPage';
 import { ReturnsPage } from '@/pages/orders/ReturnsPage';
 import { OrderSettingsPage } from '@/pages/orders/SettingsPage';
+import { CategoryTemplatesPage } from '@/pages/products/CategoryTemplatesPage';
+import { ListingsPage } from '@/pages/products/ListingsPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { ShopsPage } from '@/pages/shops/ShopsPage';
 import { AuditPage } from '@/pages/system/AuditPage';
@@ -136,7 +138,38 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     permission: Perm.PRODUCT_READ,
     milestone: 'M3（Week 6–7）',
     delivered: true,
-    component: ProductsPage,
+    children: [
+      {
+        key: 'products-library',
+        path: '/products',
+        label: zhCN.menu.productsLibrary,
+        icon: null,
+        permission: Perm.PRODUCT_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: ProductsPage,
+      },
+      {
+        key: 'products-listings',
+        path: '/products/listings',
+        label: zhCN.menu.productListings,
+        icon: null,
+        permission: Perm.PRODUCT_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: ListingsPage,
+      },
+      {
+        key: 'products-categories',
+        path: '/products/categories',
+        label: zhCN.menu.productCategories,
+        icon: null,
+        permission: Perm.PRODUCT_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: CategoryTemplatesPage,
+      },
+    ],
   },
   {
     key: 'inventory',

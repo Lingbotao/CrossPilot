@@ -32,6 +32,7 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
+from app.models.listing import CategoryMapping, Listing
 from app.models.order import (
     OrderAddressLog,
     OrderFee,
@@ -82,6 +83,8 @@ __all__ = [
     # 商品域（批次 4）
     "Spu",
     "Sku",
+    "Listing",
+    "CategoryMapping",
     # 枚举
     "TenantPlan",
     "TenantStatus",
