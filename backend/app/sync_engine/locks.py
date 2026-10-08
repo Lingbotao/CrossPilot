@@ -25,6 +25,7 @@ return 0
 BEAT_SCAN_DUE_SHOPS = "beat:scan_due_shops"
 BEAT_REFRESH_CREDENTIALS = "beat:refresh_credentials"
 BEAT_SCAN_DEAD_LETTER = "beat:scan_dead_letter"
+BEAT_SCAN_LISTING_DIFFS = "beat:scan_listing_diffs"
 
 
 class LockStatus(StrEnum):
@@ -120,6 +121,7 @@ __all__ = [
     "BEAT_REFRESH_CREDENTIALS",
     "BEAT_SCAN_DEAD_LETTER",
     "BEAT_SCAN_DUE_SHOPS",
+    "BEAT_SCAN_LISTING_DIFFS",
     "BeatLock",
     "LockOutcome",
     "LockStatus",

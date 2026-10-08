@@ -5,7 +5,9 @@ fixture 返回合成的平台 ID。live 在没有 Sandbox 凭证时失败即停�
 
 from __future__ import annotations
 
-from app.adapters.base import BatchResult, CredentialView, PriceUpdate, PublishResult, UnifiedProduct
+from decimal import Decimal, InvalidOperation
+
+from app.adapters.base import BatchResult, CredentialView, PriceUpdate, PublishResult, RemoteListing, UnifiedProduct
 from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.transport import PlatformTransport, use_fixture_transport
 
@@ -76,4 +78,38 @@ async def update_listing_prices(
     return BatchResult(succeeded=succeeded, failed=failed, raw=body)
 
 
-__all__ = ["publish_listing", "update_listing_prices"]
+async def fetch_remote_listing(
+    transport: PlatformTransport,
+    cred: CredentialView,
+    *,
+    url: str,
+    platform_product_id: str,
+    platform_sku_id: str,
+) -> RemoteListing:
+    """各平台只负责自己的 URL。售价必须是十进制字符串。"""
+
+    _not_live(cred.platform)
+    _status, body = await transport.request(
+        "POST",
+        url,
+        json_body={
+            "platform_product_id": platform_product_id,
+            "platform_sku_id": platform_sku_id,
+            "access_token": cred.access_token,
+        },
+        platform=cred.platform,
+    )
+    price_text = body.get("price")
+    currency = body.get("currency")
+    if not isinstance(price_text, str) or not isinstance(currency, str) or len(currency) != 3:
+        raise AdapterError("平台商品响应缺少售价", platform=cred.platform, decision=RetryDecision.FAIL_FAST)
+    try:
+        price = Decimal(price_text)
+    except InvalidOperation as exc:
+        raise AdapterError("平台售价不是十进制数字", platform=cred.platform, decision=RetryDecision.FAIL_FAST) from exc
+    if price < 0:
+        raise AdapterError("平台售价为负", platform=cred.platform, decision=RetryDecision.FAIL_FAST)
+    return RemoteListing(price=price, currency=currency.upper())
+
+
+__all__ = ["fetch_remote_listing", "publish_listing", "update_listing_prices"]

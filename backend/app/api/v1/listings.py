@@ -26,9 +26,11 @@ from app.schemas.listing_batch import (
     PricePreview,
     PublishBatchCreate,
 )
+from app.schemas.listing_diff import ListingDiffView, ListingPatrolResult
 from app.schemas.shop import PlatformSiteCatalog
 from app.services.listing import ListingService
 from app.services.listing_batch import ListingBatchService
+from app.services.listing_diff import ListingDiffService
 
 router = APIRouter(tags=["Listing"])
 
@@ -225,3 +227,59 @@ async def get_listing_batch(
 ) -> ApiResponse[ListingBatchView]:
     del identity
     return ok(await ListingBatchService(session).get_batch(batch_id))
+
+
+@router.get("/listing-diffs", response_model=ApiResponse[PageData[ListingDiffView]], summary="Listing 差异清单")
+async def list_listing_diffs(
+    identity: ProductReader,
+    session: DbSession,
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 20,
+    status: Annotated[str | None, Query(max_length=16)] = "PENDING",
+) -> ApiResponse[PageData[ListingDiffView]]:
+    del identity
+    return ok(await ListingDiffService(session).list_diffs(limit=limit, cursor=cursor, status=status))
+
+
+@router.post("/listing-diffs/patrol", response_model=ApiResponse[ListingPatrolResult], summary="巡检平台 Listing")
+async def patrol_listing_diffs(
+    identity: ProductWriter,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[ListingPatrolResult]:
+    data = await ListingDiffService(session).patrol(actor_id=identity.user.id)
+    return ok(data, message="巡检完成")
+
+
+@router.post(
+    "/listing-diffs/{diff_id}/accept",
+    response_model=ApiResponse[ListingDiffView],
+    summary="采纳平台售价",
+)
+async def accept_listing_diff(
+    diff_id: int,
+    identity: ProductWriter,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[ListingDiffView]:
+    return ok(
+        await ListingDiffService(session).accept(diff_id, actor_id=identity.user.id),
+        message="已采纳平台上的值",
+    )
+
+
+@router.post(
+    "/listing-diffs/{diff_id}/dismiss",
+    response_model=ApiResponse[ListingDiffView],
+    summary="忽略 Listing 差异",
+)
+async def dismiss_listing_diff(
+    diff_id: int,
+    identity: ProductWriter,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[ListingDiffView]:
+    return ok(
+        await ListingDiffService(session).dismiss(diff_id, actor_id=identity.user.id),
+        message="已保留本地的值",
+    )

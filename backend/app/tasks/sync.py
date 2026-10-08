@@ -14,7 +14,12 @@ from app.core.context import tenant_context
 from app.core.logging import configure_logging, get_logger
 from app.services.order_sync import OrderSyncService, SyncRun
 from app.sync_engine.errors import StoreUnavailable
-from app.sync_engine.locks import BEAT_REFRESH_CREDENTIALS, BEAT_SCAN_DEAD_LETTER, BEAT_SCAN_DUE_SHOPS
+from app.sync_engine.locks import (
+    BEAT_REFRESH_CREDENTIALS,
+    BEAT_SCAN_DEAD_LETTER,
+    BEAT_SCAN_DUE_SHOPS,
+    BEAT_SCAN_LISTING_DIFFS,
+)
 from app.sync_engine.runtime import get_dead_letter_queue, run_beat_singleton
 from app.tasks.celery_app import celery_app
 
@@ -184,6 +189,41 @@ def _retry_webhook(task: Any, *, platform: str, body: str, event_id: str, kind: 
         raise task.retry(countdown=plan.delay_seconds)
     except MaxRetriesExceededError:
         asyncio.run(_park_webhook(platform=platform, body=body, event_id=event_id, kind=kind, error=error))
+
+
+async def _patrol_listing_diffs(tenant_id: int) -> dict[str, Any]:
+    from app.db.session import session_scope
+    from app.services.listing_diff import ListingDiffService
+
+    async with session_scope(tenant_id) as session:
+        result = await ListingDiffService(session).patrol(actor_id=None)
+    return {"created": result.created, "scanned": result.scanned}
+
+
+@celery_app.task(name="sync.patrol_listing_diffs")
+def patrol_listing_diffs(tenant_id: int) -> dict[str, Any]:
+    """巡检一个租户的已关联 Listing。必须显式传入 tenant_id。"""
+
+    configure_logging()
+    with tenant_context(tenant_id):
+        return asyncio.run(_patrol_listing_diffs(tenant_id))
+
+
+async def _scan_listing_diffs() -> dict[str, Any]:
+    from app.services.listing_diff import list_linked_tenants
+
+    tenant_ids = await list_linked_tenants()
+    for tenant_id in tenant_ids:
+        patrol_listing_diffs.delay(tenant_id)
+    return {"tenants": len(tenant_ids)}
+
+
+@celery_app.task(name="sync.scan_listing_diffs")
+def scan_listing_diffs() -> dict[str, Any]:
+    """每日找出有已关联 Listing 的租户，再按租户入队。"""
+
+    configure_logging()
+    return asyncio.run(run_beat_singleton(BEAT_SCAN_LISTING_DIFFS, _scan_listing_diffs))
 
 
 async def _park_webhook(*, platform: str, body: str, event_id: str, kind: str, error: str) -> None:

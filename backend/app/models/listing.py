@@ -26,6 +26,10 @@ _KIND_SQL = ", ".join(f"'{item}'" for item in BATCH_KINDS)
 _BATCH_STATUS_SQL = ", ".join(f"'{item}'" for item in BATCH_STATUSES)
 _ITEM_STATUS_SQL = ", ".join(f"'{item}'" for item in BATCH_ITEM_STATUSES)
 MAX_BATCH_ITEMS = 500
+DIFF_FIELDS: tuple[str, ...] = ("price", "currency")
+DIFF_STATUSES: tuple[str, ...] = ("PENDING", "ACCEPTED", "DISMISSED")
+_DIFF_FIELD_SQL = ", ".join(f"'{item}'" for item in DIFF_FIELDS)
+_DIFF_STATUS_SQL = ", ".join(f"'{item}'" for item in DIFF_STATUSES)
 
 
 class CategoryMapping(Base, PKMixin, TenantMixin, AuditMixin, SoftDeleteMixin):
@@ -166,4 +170,33 @@ class ListingBatchItem(Base, PKMixin, TenantMixin, AuditMixin):
             name="price_after",
         ),
         Index("ix_listing_batch_item_tenant_id_batch_id", "tenant_id", "batch_id"),
+    )
+
+
+class ListingDiff(Base, PKMixin, TenantMixin, AuditMixin):
+    """平台侧售价或币种与本地不一致时的待确认记录。操作流水，不软删除。"""
+
+    __tablename__ = "listing_diff"
+
+    listing_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    shop_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    field_name: Mapped[str] = mapped_column(String(16), nullable=False)
+    local_value: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    remote_value: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING", server_default="PENDING")
+
+    __table_args__ = (
+        ForeignKeyConstraint(["listing_id"], ["listing.id"], name="fk_listing_diff_listing_id_listing"),
+        ForeignKeyConstraint(["shop_id"], ["shop.id"], name="fk_listing_diff_shop_id_shop"),
+        CheckConstraint(f"field_name IN ({_DIFF_FIELD_SQL})", name="field_name"),
+        CheckConstraint(f"status IN ({_DIFF_STATUS_SQL})", name="status"),
+        Index("ix_listing_diff_tenant_id_status", "tenant_id", "status"),
+        Index(
+            "uq_listing_diff_pending",
+            "tenant_id",
+            "listing_id",
+            "field_name",
+            unique=True,
+            postgresql_where=text("status = 'PENDING'"),
+        ),
     )

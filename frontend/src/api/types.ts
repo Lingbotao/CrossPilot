@@ -76,6 +76,8 @@ export const ErrorCode = {
   CATEGORY_TEMPLATE_DUPLICATED: 40006,
   LISTING_BATCH_TOO_LARGE: 40007,
   LISTING_PRICE_CONFIRM_REQUIRED: 40008,
+  PRODUCT_IMPORT_INVALID: 40009,
+  IMAGE_FILE_INVALID: 40010,
   /** 店铺授权过期 —— 前端据此引导用户重新授权 */
   SHOP_GRANT_EXPIRED: 40201,
 
@@ -845,6 +847,65 @@ export interface ListingView {
   status: ListingStatusValue;
   created_at: string;
   updated_at: string;
+}
+
+export type ProductImageType = 'MAIN' | 'GALLERY' | 'APLUS';
+
+export interface PlatformImageCheck {
+  platform_code: string;
+  ok: boolean;
+  issues: string[];
+}
+
+export interface ProductImageView {
+  id: string;
+  spu_id: string;
+  sku_id: string | null;
+  image_type: ProductImageType;
+  sort: number;
+  width_px: number;
+  height_px: number;
+  byte_size: number;
+  content_type: string;
+  white_background: boolean;
+  compliance: PlatformImageCheck[];
+}
+
+export interface SpreadsheetFile {
+  filename: string;
+  content_type: string;
+  content_base64: string;
+  row_count: number;
+  truncated: boolean;
+}
+
+export interface ProductImportResult {
+  created: number;
+}
+
+export interface ProductImportRowError {
+  row: number;
+  column: string;
+  message: string;
+}
+
+export type ListingDiffStatus = 'PENDING' | 'ACCEPTED' | 'DISMISSED';
+
+export interface ListingDiffView {
+  id: string;
+  listing_id: string;
+  shop_id: string;
+  shop_name: string;
+  sku_code: string;
+  field_name: 'price' | 'currency';
+  local_value: string | null;
+  remote_value: string;
+  status: ListingDiffStatus;
+}
+
+export interface ListingPatrolResult {
+  created: number;
+  scanned: number;
 }
 
 export interface ListingWrite {

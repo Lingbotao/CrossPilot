@@ -992,3 +992,113 @@ class TestListingBatchIsolation:
         assert _run(_visible(item_sql, TENANT_B, item_a, item_b)) == {item_b}
         with pytest.raises(Exception):  # noqa: B017 - 批次是操作流水，应用角色没有 DELETE
             _run(_delete_batch())
+
+
+class TestCatalogMediaIsolation:
+    def test_tenant_cannot_read_another_tenants_image_or_listing_diff(self, migrated: None) -> None:
+        base = 982000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        spu_a, spu_b = base + 2, base + 3
+        sku_a, sku_b = base + 4, base + 5
+        listing_a, listing_b = base + 6, base + 7
+        image_a, image_b = base + 8, base + 9
+        diff_a, diff_b = base + 10, base + 11
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', 'media', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"media-{shop_id}"},
+                    )
+                for spu_id, tenant_id in ((spu_a, TENANT_A), (spu_b, TENANT_B)):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, 'media', 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id},
+                    )
+                for sku_id, tenant_id, spu_id in ((sku_a, TENANT_A, spu_a), (sku_b, TENANT_B, spu_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku ("
+                            "id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm"
+                            ") VALUES (:id, :tid, :spu, :code, 100, 10, 10, 10)"
+                        ),
+                        {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": f"MEDIA-{sku_id}"},
+                    )
+                for listing_id, tenant_id, sku_id, shop_id in (
+                    (listing_a, TENANT_A, sku_a, shop_a),
+                    (listing_b, TENANT_B, sku_b, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO listing (id, tenant_id, sku_id, shop_id, status) "
+                            "VALUES (:id, :tid, :sku, :shop, 'DRAFT')"
+                        ),
+                        {"id": listing_id, "tid": tenant_id, "sku": sku_id, "shop": shop_id},
+                    )
+                for image_id, tenant_id, spu_id in ((image_a, TENANT_A, spu_a), (image_b, TENANT_B, spu_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO product_image ("
+                            "id, tenant_id, spu_id, object_key, image_type, sort, width_px, height_px, "
+                            "byte_size, content_type, white_background, platform_compliance"
+                            ") VALUES (:id, :tid, :spu, :key, 'MAIN', 0, 1000, 1000, 12, 'image/png', true, '[]'::jsonb)"
+                        ),
+                        {"id": image_id, "tid": tenant_id, "spu": spu_id, "key": f"img-{image_id}"},
+                    )
+                for diff_id, tenant_id, listing_id, shop_id in (
+                    (diff_a, TENANT_A, listing_a, shop_a),
+                    (diff_b, TENANT_B, listing_b, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO listing_diff ("
+                            "id, tenant_id, listing_id, shop_id, field_name, local_value, remote_value, status"
+                            ") VALUES (:id, :tid, :listing, :shop, 'price', '10.000000', '15.000000', 'PENDING')"
+                        ),
+                        {"id": diff_id, "tid": tenant_id, "listing": listing_id, "shop": shop_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_image() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM product_image WHERE id = :id"), {"id": image_a})
+                await session.commit()
+            await engine.dispose()
+
+        async def _delete_diff() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM listing_diff WHERE id = :id"), {"id": diff_a})
+                await session.commit()
+            await engine.dispose()
+
+        image_sql = "SELECT id FROM product_image WHERE id IN (:a, :b)"
+        diff_sql = "SELECT id FROM listing_diff WHERE id IN (:a, :b)"
+        _run(_seed())
+        assert _run(_visible(image_sql, TENANT_A, image_a, image_b)) == {image_a}
+        assert _run(_visible(image_sql, TENANT_B, image_a, image_b)) == {image_b}
+        assert _run(_visible(diff_sql, TENANT_A, diff_a, diff_b)) == {diff_a}
+        assert _run(_visible(diff_sql, TENANT_B, diff_a, diff_b)) == {diff_b}
+        with pytest.raises(Exception):  # noqa: B017 - 图片是主数据，应用角色没有 DELETE
+            _run(_delete_image())
+        with pytest.raises(Exception):  # noqa: B017 - 差异清单是流水，应用角色没有 DELETE
+            _run(_delete_diff())

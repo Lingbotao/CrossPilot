@@ -64,6 +64,8 @@ class FixtureTransport:
             items = body.get("items")
             count = len(items) if isinstance(items, list) else 0
             return 200, {"succeeded": count, "failed": 0}
+        if url.endswith("/listing_snapshot"):
+            return 200, {"price": "15.000000", "currency": "USD"}
         if url.endswith("/ship_order") or url.rstrip("/").endswith("/shipment"):
             return 200, {"accepted": True, "tracking_no": str(body.get("tracking_no") or "")}
         if url.endswith("/update_address") or url.endswith("/update_note"):

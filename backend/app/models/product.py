@@ -9,7 +9,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKeyConstraint, Index, Numeric, String, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKeyConstraint, Index, Integer, Numeric, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,8 @@ PRODUCT_STATUSES: tuple[str, ...] = (
     "VIOLATION_OFF",
 )
 PRODUCT_STATUS_SQL = ", ".join(f"'{item}'" for item in PRODUCT_STATUSES)
+IMAGE_TYPES: tuple[str, ...] = ("MAIN", "GALLERY", "APLUS")
+IMAGE_TYPE_SQL = ", ".join(f"'{item}'" for item in IMAGE_TYPES)
 MAX_SKUS_PER_SPU = 100
 
 
@@ -78,4 +80,30 @@ class Sku(Base, PKMixin, TenantMixin, AuditMixin, SoftDeleteMixin):
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index("ix_sku_tenant_id_spu_id", "tenant_id", "spu_id"),
+    )
+
+
+class ProductImage(Base, PKMixin, TenantMixin, AuditMixin, SoftDeleteMixin):
+    """商品图片。尺寸和白底不合规时仍保存，并在 platform_compliance 里给出提示。"""
+
+    __tablename__ = "product_image"
+
+    spu_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sku_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    image_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    width_px: Mapped[int] = mapped_column(Integer, nullable=False)
+    height_px: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    white_background: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    platform_compliance: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+
+    __table_args__ = (
+        ForeignKeyConstraint(["spu_id"], ["spu.id"], name="fk_product_image_spu_id_spu"),
+        ForeignKeyConstraint(["sku_id"], ["sku.id"], name="fk_product_image_sku_id_sku"),
+        CheckConstraint(f"image_type IN ({IMAGE_TYPE_SQL})", name="image_type"),
+        CheckConstraint("width_px > 0 AND height_px > 0 AND byte_size > 0 AND sort >= 0", name="measures"),
+        Index("ix_product_image_tenant_id_spu_id", "tenant_id", "spu_id"),
     )

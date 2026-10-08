@@ -3,10 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Descriptions, Drawer, Form, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 
+import { ApiError } from '@/api/client';
+import { downloadBase64 } from '@/api/orders';
 import { productsApi } from '@/api/products';
 import {
+  ErrorCode,
   Perm,
   ProductStatus,
+  type ProductImportRowError,
   type ProductStatusValue,
   type SkuView,
   type SkuWrite,
@@ -161,6 +165,8 @@ export function ProductsPage() {
   const [spuForm] = Form.useForm<SpuForm>();
   const [skuForm] = Form.useForm<SkuForm>();
   const [editSkuForm] = Form.useForm<SkuForm>();
+  const [importOpen, setImportOpen] = useState(false);
+  const [importErrors, setImportErrors] = useState<ProductImportRowError[]>([]);
 
   const list = useQuery({
     queryKey: ['spus', filters],
@@ -282,6 +288,39 @@ export function ProductsPage() {
     });
   };
 
+  const exportFile = useMutation({
+    mutationFn: () => productsApi.exportFile({ status: filters.status, q: filters.q }),
+    onSuccess: (file) => {
+      downloadBase64(file.filename, file.content_type, file.content_base64);
+      if (file.truncated) {
+        feedback().message.warning(copy.exportTruncated);
+      }
+    },
+  });
+  const templateFile = useMutation({
+    mutationFn: () => productsApi.importTemplate(),
+    onSuccess: (file) => downloadBase64(file.filename, file.content_type, file.content_base64),
+  });
+  const importFile = useMutation({
+    mutationFn: (file: File) => productsApi.importFile(file),
+    onSuccess: async (result) => {
+      feedback().message.success(`${copy.imported}：${result.created}`);
+      setImportErrors([]);
+      setImportOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ['spus'] });
+    },
+    onError: (error: unknown) => {
+      if (error instanceof ApiError && error.code === ErrorCode.PRODUCT_IMPORT_INVALID) {
+        const data = error.data as { rows?: ProductImportRowError[] } | null;
+        setImportErrors(data?.rows ?? []);
+        return;
+      }
+      if (error instanceof ApiError) {
+        feedback().message.error(error.message);
+      }
+    },
+  });
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card>
@@ -292,11 +331,27 @@ export function ProductsPage() {
             </Typography.Title>
             <Typography.Text type="secondary">{copy.description}</Typography.Text>
           </div>
-          <PermissionGuard permission={Perm.PRODUCT_WRITE}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              {copy.create}
+          <Space>
+            <Button loading={templateFile.isPending} onClick={() => templateFile.mutate()}>
+              {copy.template}
             </Button>
-          </PermissionGuard>
+            <Button loading={exportFile.isPending} onClick={() => exportFile.mutate()}>
+              {copy.exportCurrent}
+            </Button>
+            <PermissionGuard permission={Perm.PRODUCT_WRITE}>
+              <Button
+                onClick={() => {
+                  setImportErrors([]);
+                  setImportOpen(true);
+                }}
+              >
+                {copy.importFile}
+              </Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                {copy.create}
+              </Button>
+            </PermissionGuard>
+          </Space>
         </Space>
         <Form<FilterForm>
           layout="inline"
@@ -487,6 +542,50 @@ export function ProductsPage() {
         <Form<SkuForm> form={editSkuForm} layout="vertical" onFinish={(values) => saveSku.mutate(values)}>
           <SkuFields canViewCost={canViewCost} />
         </Form>
+      </Modal>
+
+      <Modal title={copy.importTitle} open={importOpen} onCancel={() => setImportOpen(false)} footer={null} destroyOnClose>
+        <Typography.Paragraph type="secondary">{copy.importHint}</Typography.Paragraph>
+        <input
+          type="file"
+          accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) {
+              importFile.mutate(file);
+            }
+          }}
+        />
+        {importErrors.length > 0 ? (
+          <Table<ProductImportRowError>
+            style={{ marginTop: 16 }}
+            rowKey={(row) => `${row.row}-${row.column}-${row.message}`}
+            pagination={false}
+            dataSource={importErrors}
+            columns={[
+              { title: copy.importRow, dataIndex: 'row', width: 80 },
+              {
+                title: copy.importColumn,
+                dataIndex: 'column',
+                render: (value: string) => {
+                  const labels: Record<string, string> = {
+                    sku_code: copy.skuCode,
+                    title: copy.searchTitle,
+                    brand: copy.brand,
+                    barcode: copy.barcode,
+                    weight_g: copy.weight,
+                    length_cm: copy.length,
+                    width_cm: copy.width,
+                    height_cm: copy.height,
+                  };
+                  return labels[value] || value || '—';
+                },
+              },
+              { title: copy.importMessage, dataIndex: 'message' },
+            ]}
+          />
+        ) : null}
       </Modal>
     </Space>
   );

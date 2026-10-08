@@ -144,6 +144,14 @@ class PriceUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class RemoteListing:
+    """平台上当前的售价。只比较本地已经保存的字段。"""
+
+    price: Decimal
+    currency: str
+
+
+@dataclass(frozen=True, slots=True)
 class InventoryUpdate:
     platform_sku_id: str
     available: int
@@ -238,6 +246,15 @@ class PlatformAdapter(ABC):
     async def update_price(self, cred: CredentialView, items: list[PriceUpdate]) -> BatchResult:
         raise self._later("M3", cred)
 
+    async def fetch_listing(
+        self,
+        cred: CredentialView,
+        *,
+        platform_product_id: str,
+        platform_sku_id: str,
+    ) -> RemoteListing:
+        raise self._later("M3", cred)
+
     async def update_inventory(self, cred: CredentialView, items: list[InventoryUpdate]) -> BatchResult:
         raise self._later("M3", cred)
 
@@ -282,6 +299,7 @@ __all__ = [
     "PriceUpdate",
     "PublishResult",
     "RateLimitSpec",
+    "RemoteListing",
     "TokenBundle",
     "UnifiedFee",
     "UnifiedInventory",

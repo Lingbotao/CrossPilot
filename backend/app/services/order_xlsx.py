@@ -7,15 +7,25 @@ from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
-def build_xlsx(headers: list[str], rows: list[list[str]]) -> bytes:
+def build_xlsx(headers: list[str], rows: list[list[str]], *, sheet_name: str = "orders") -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as book:
         book.writestr("[Content_Types].xml", _CONTENT_TYPES)
         book.writestr("_rels/.rels", _ROOT_RELS)
-        book.writestr("xl/workbook.xml", _WORKBOOK)
+        book.writestr("xl/workbook.xml", _workbook(sheet_name))
         book.writestr("xl/_rels/workbook.xml.rels", _WORKBOOK_RELS)
         book.writestr("xl/worksheets/sheet1.xml", _sheet(headers, rows))
     return buffer.getvalue()
+
+
+def _workbook(sheet_name: str) -> str:
+    safe = escape(sheet_name)
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f'<sheets><sheet name="{safe}" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    )
 
 
 def _sheet(headers: list[str], rows: list[list[str]]) -> str:
@@ -62,12 +72,6 @@ _ROOT_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>
-"""
-
-_WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="orders" sheetId="1" r:id="rId1"/></sheets>
-</workbook>
 """
 
 _WORKBOOK_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

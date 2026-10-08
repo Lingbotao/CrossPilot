@@ -32,8 +32,9 @@ dependencies = [
   "celery[redis]>=5.4.0",
   # 出站 HTTP（平台适配器）
   "httpx>=0.27.0",
-  # 对象存储
+  # 对象存储与图片尺寸
   "boto3>=1.34.0",
+  "pillow>=10.4.0",
 ]
 
 [project.optional-dependencies]

@@ -78,6 +78,11 @@ celery_app.conf.beat_schedule = {
         "task": "sync.scan_dead_letter",
         "schedule": crontab(minute="*/10"),
     },
+    # 每日巡检已关联 Listing 的平台售价。16:00 UTC 约等于北京时间零点。
+    "beat-listing-diffs": {
+        "task": "sync.scan_listing_diffs",
+        "schedule": crontab(hour=16, minute=0),
+    },
 }
 
 

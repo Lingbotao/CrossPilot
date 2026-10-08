@@ -7,7 +7,9 @@ import type {
   CategoryMappingView,
   CategoryMappingWrite,
   ListingBatchView,
+  ListingDiffView,
   ListingPatch,
+  ListingPatrolResult,
   ListingQuery,
   ListingShopOption,
   ListingView,
@@ -54,4 +56,15 @@ export const listingsApi = {
     api.post<ListingBatchView>('/listing-batches/prices', payload, { idempotent: true }),
 
   batch: (batchId: string) => api.get<ListingBatchView>(`/listing-batches/${encodeURIComponent(batchId)}`),
+
+  diffs: (query: { status?: string; cursor?: string; limit?: number }) =>
+    api.get<PageData<ListingDiffView>>('/listing-diffs', { params: query }),
+
+  patrolDiffs: () => api.post<ListingPatrolResult>('/listing-diffs/patrol', {}, { idempotent: true }),
+
+  acceptDiff: (diffId: string) =>
+    api.post<ListingDiffView>(`/listing-diffs/${encodeURIComponent(diffId)}/accept`, {}, { idempotent: true }),
+
+  dismissDiff: (diffId: string) =>
+    api.post<ListingDiffView>(`/listing-diffs/${encodeURIComponent(diffId)}/dismiss`, {}, { idempotent: true }),
 };

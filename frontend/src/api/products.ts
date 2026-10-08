@@ -3,9 +3,13 @@
 import { api } from './client';
 import type {
   PageData,
+  ProductImageType,
+  ProductImageView,
+  ProductImportResult,
   SkuPatch,
   SkuView,
   SkuWrite,
+  SpreadsheetFile,
   SpuCreate,
   SpuDetail,
   SpuListItem,
@@ -28,4 +32,29 @@ export const productsApi = {
 
   updateSku: (skuId: string, payload: SkuPatch) =>
     api.patch<SkuView>(`/skus/${encodeURIComponent(skuId)}`, payload, { idempotent: true }),
+
+  exportFile: (query: Pick<SpuListQuery, 'status' | 'q'>) =>
+    api.get<SpreadsheetFile>('/spus/export', { params: query }),
+
+  importTemplate: () => api.get<SpreadsheetFile>('/spus/import-template'),
+
+  importFile: (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return api.post<ProductImportResult>('/spus/import', body, { idempotent: true, skipErrorToast: true });
+  },
+
+  images: (spuId: string) =>
+    api.get<ProductImageView[]>('/product-images', { params: { spu_id: spuId } }),
+
+  uploadImage: (spuId: string, imageType: ProductImageType, file: File) => {
+    const body = new FormData();
+    body.append('spu_id', spuId);
+    body.append('image_type', imageType);
+    body.append('file', file);
+    return api.post<ProductImageView>('/product-images', body, { idempotent: true });
+  },
+
+  removeImage: (imageId: string) =>
+    api.delete<ProductImageView>(`/product-images/${encodeURIComponent(imageId)}`, { idempotent: true }),
 };

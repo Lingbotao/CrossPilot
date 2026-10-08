@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError, ErrorCode
-from app.models.product import Sku, Spu
+from app.models.product import ProductImage, Sku, Spu
 from app.repositories.base import BaseRepository
 
 
@@ -83,3 +83,36 @@ class SkuRepository(BaseRepository[Sku]):
             stmt = stmt.where(Sku.id != exclude_id)
         found = (await self.session.execute(stmt)).scalar_one_or_none()
         return found is not None
+
+    async def list_for_export(
+        self,
+        *,
+        limit: int,
+        status: str | None,
+        title: str | None,
+    ) -> list[tuple[Sku, Spu]]:
+        stmt = (
+            select(Sku, Spu)
+            .join(Spu, Spu.id == Sku.spu_id)
+            .where(Sku.deleted_at.is_(None), Spu.deleted_at.is_(None))
+            .order_by(Sku.id.desc())
+            .limit(limit)
+        )
+        if status:
+            stmt = stmt.where(Spu.status == status)
+        if title:
+            stmt = stmt.where(Spu.title.ilike(_like(title), escape="\\"))
+        rows = (await self.session.execute(stmt)).all()
+        return [(sku, spu) for sku, spu in rows]
+
+
+class ProductImageRepository(BaseRepository[ProductImage]):
+    model = ProductImage
+
+    async def list_for_spu(self, spu_id: int) -> list[ProductImage]:
+        stmt = (
+            self.base_select()
+            .where(ProductImage.spu_id == spu_id)
+            .order_by(ProductImage.sort.asc(), ProductImage.id.asc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())

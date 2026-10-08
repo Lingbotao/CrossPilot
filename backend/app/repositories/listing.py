@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError, ErrorCode
-from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem
+from app.db.tenant_filter import SKIP_FLAG
+from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem, ListingDiff
 from app.repositories.base import BaseRepository
 
 
@@ -157,6 +158,21 @@ class ListingRepository(BaseRepository[Listing]):
         stmt = self.base_select().where(Listing.id.in_(entity_ids))
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_linked(self, *, limit: int) -> list[Listing]:
+        stmt = self.base_select().where(Listing.status == "LINKED").order_by(Listing.id.asc()).limit(limit)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def tenant_ids_with_linked(self) -> list[int]:
+        """系统巡检用。显式跳过租户过滤，调用方再按租户逐个进入上下文。"""
+
+        stmt = (
+            select(Listing.tenant_id)
+            .where(Listing.status == "LINKED", Listing.deleted_at.is_(None))
+            .distinct()
+            .execution_options(**{SKIP_FLAG: True})
+        )
+        return [int(row) for row in (await self.session.execute(stmt)).scalars().all()]
+
     async def platform_sku_taken(self, shop_id: int, platform_sku_id: str, *, exclude_id: int | None = None) -> bool:
         stmt = self.base_select().where(Listing.shop_id == shop_id, Listing.platform_sku_id == platform_sku_id)
         if exclude_id is not None:
@@ -183,4 +199,38 @@ class ListingBatchItemRepository(BaseRepository[ListingBatchItem]):
 
     async def list_for_batch(self, batch_id: int) -> list[ListingBatchItem]:
         stmt = self.base_select().where(ListingBatchItem.batch_id == batch_id).order_by(ListingBatchItem.id.asc())
+        return list((await self.session.execute(stmt)).scalars().all())
+
+
+class ListingDiffRepository(BaseRepository[ListingDiff]):
+    model = ListingDiff
+
+    async def pending(self, listing_id: int, field_name: str) -> ListingDiff | None:
+        stmt = self.base_select().where(
+            ListingDiff.listing_id == listing_id,
+            ListingDiff.field_name == field_name,
+            ListingDiff.status == "PENDING",
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def latest_closed(self, listing_id: int, field_name: str) -> ListingDiff | None:
+        stmt = (
+            self.base_select()
+            .where(
+                ListingDiff.listing_id == listing_id,
+                ListingDiff.field_name == field_name,
+                ListingDiff.status != "PENDING",
+            )
+            .order_by(ListingDiff.id.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_cursor(self, *, limit: int, before_id: int | None, status: str | None) -> list[ListingDiff]:
+        stmt = self.base_select()
+        if status:
+            stmt = stmt.where(ListingDiff.status == status)
+        if before_id is not None:
+            stmt = stmt.where(ListingDiff.id < before_id)
+        stmt = stmt.order_by(ListingDiff.id.desc()).limit(limit + 1)
         return list((await self.session.execute(stmt)).scalars().all())

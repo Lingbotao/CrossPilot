@@ -32,7 +32,7 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
-from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem
+from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem, ListingDiff
 from app.models.order import (
     OrderAddressLog,
     OrderFee,
@@ -46,7 +46,7 @@ from app.models.order import (
     ShopSyncCursor,
 )
 from app.models.platform import Platform, PlatformApiLog, Shop, ShopCredential, ShopGroup, SyncTask
-from app.models.product import Sku, Spu
+from app.models.product import ProductImage, Sku, Spu
 from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
 
 __all__ = [
@@ -83,10 +83,12 @@ __all__ = [
     # 商品域（批次 4）
     "Spu",
     "Sku",
+    "ProductImage",
     "Listing",
     "CategoryMapping",
     "ListingBatch",
     "ListingBatchItem",
+    "ListingDiff",
     # 枚举
     "TenantPlan",
     "TenantStatus",

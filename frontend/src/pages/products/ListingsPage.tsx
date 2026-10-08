@@ -12,6 +12,7 @@ import {
   type ListingBatchStatusValue,
   type ListingQuery,
   type ListingStatusValue,
+  type ListingDiffView,
   type ListingView,
   type PricePreview,
   type SpuListItem,
@@ -249,6 +250,7 @@ export function ListingsPage() {
   return (
     <Card title={copy.title}>
       <Typography.Paragraph type="secondary">{copy.description}</Typography.Paragraph>
+      <ListingDiffPanel />
       <Form form={filterForm} layout="inline" onFinish={applyFilters} style={{ marginBottom: 16 }}>
         <Form.Item name="shop_id" label={copy.shop}>
           <Select
@@ -524,4 +526,101 @@ export function ListingsPage() {
       </Modal>
     </Card>
   );
+}
+
+function ListingDiffPanel() {
+  const queryClient = useQueryClient();
+  const diffs = useQuery({
+    queryKey: ['listing-diffs', 'PENDING'],
+    queryFn: () => listingsApi.diffs({ status: 'PENDING', limit: 20 }),
+  });
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['listing-diffs'] });
+    await queryClient.invalidateQueries({ queryKey: ['listings'] });
+  };
+  const patrol = useMutation({
+    mutationFn: () => listingsApi.patrolDiffs(),
+    onSuccess: async (result) => {
+      feedback().message.success(`${copy.patrolDone}：${result.created}`);
+      await refresh();
+    },
+  });
+  const accept = useMutation({
+    mutationFn: (diffId: string) => listingsApi.acceptDiff(diffId),
+    onSuccess: async () => {
+      feedback().message.success(copy.acceptedRemote);
+      await refresh();
+    },
+  });
+  const dismiss = useMutation({
+    mutationFn: (diffId: string) => listingsApi.dismissDiff(diffId),
+    onSuccess: async () => {
+      feedback().message.success(copy.keptLocal);
+      await refresh();
+    },
+  });
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 8 }}>
+        <Typography.Text strong>{copy.diffTitle}</Typography.Text>
+        <PermissionGuard permission={Perm.PRODUCT_WRITE}>
+          <Button loading={patrol.isPending} onClick={() => patrol.mutate()}>
+            {copy.patrol}
+          </Button>
+        </PermissionGuard>
+      </Space>
+      <Typography.Paragraph type="secondary">{copy.diffHint}</Typography.Paragraph>
+      <Table<ListingDiffView>
+        rowKey="id"
+        size="small"
+        loading={diffs.isLoading}
+        pagination={false}
+        dataSource={diffs.data?.items ?? []}
+        locale={{ emptyText: copy.diffEmpty }}
+        columns={[
+          { title: copy.sku, dataIndex: 'sku_code' },
+          { title: copy.shop, dataIndex: 'shop_name' },
+          {
+            title: copy.status,
+            dataIndex: 'field_name',
+            render: (value: ListingDiffView['field_name']) => (value === 'price' ? copy.fieldPrice : copy.fieldCurrency),
+          },
+          {
+            title: copy.localValue,
+            render: (_value, row) => diffText(row.field_name, row.local_value),
+          },
+          {
+            title: copy.remoteValue,
+            render: (_value, row) => diffText(row.field_name, row.remote_value),
+          },
+          {
+            title: zhCN.common.actions,
+            render: (_value, row) => (
+              <PermissionGuard permission={Perm.PRODUCT_WRITE}>
+                <Space>
+                  <Button type="link" onClick={() => accept.mutate(row.id)}>
+                    {copy.acceptRemote}
+                  </Button>
+                  <Button type="link" onClick={() => dismiss.mutate(row.id)}>
+                    {copy.keepLocal}
+                  </Button>
+                </Space>
+              </PermissionGuard>
+            ),
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+function diffText(field: ListingDiffView['field_name'], value: string | null) {
+  if (!value) {
+    return '—';
+  }
+  if (field === 'price') {
+    return <MoneyText value={value} />;
+  }
+  return value;
 }
