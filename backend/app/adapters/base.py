@@ -125,6 +125,7 @@ class RateLimitSpec:
 @dataclass(frozen=True, slots=True)
 class PublishResult:
     platform_product_id: str
+    platform_sku_id: str
     raw: dict[str, Any]
 
 

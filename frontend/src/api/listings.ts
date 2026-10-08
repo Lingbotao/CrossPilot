@@ -6,6 +6,7 @@ import type {
   CategoryMappingQuery,
   CategoryMappingView,
   CategoryMappingWrite,
+  ListingBatchView,
   ListingPatch,
   ListingQuery,
   ListingShopOption,
@@ -13,6 +14,9 @@ import type {
   ListingWrite,
   PageData,
   PlatformSiteCatalog,
+  PriceBatchWrite,
+  PricePreview,
+  PublishBatchWrite,
 } from './types';
 
 export const listingsApi = {
@@ -39,4 +43,15 @@ export const listingsApi = {
     }),
 
   catalog: () => api.get<PlatformSiteCatalog[]>('/category-mappings/catalog'),
+
+  publishBatch: (payload: PublishBatchWrite) =>
+    api.post<ListingBatchView>('/listing-batches/publish', payload, { idempotent: true }),
+
+  previewPrices: (payload: PriceBatchWrite) =>
+    api.post<PricePreview>('/listing-batches/prices/preview', payload),
+
+  repriceBatch: (payload: PriceBatchWrite) =>
+    api.post<ListingBatchView>('/listing-batches/prices', payload, { idempotent: true }),
+
+  batch: (batchId: string) => api.get<ListingBatchView>(`/listing-batches/${encodeURIComponent(batchId)}`),
 };

@@ -9,15 +9,20 @@ from typing import Any
 from urllib.parse import quote
 
 from app.adapters.base import (
+    BatchResult,
     CredentialView,
     PageResult,
     PlatformAdapter,
+    PriceUpdate,
+    PublishResult,
     RateLimitSpec,
     TokenBundle,
     UnifiedOrder,
+    UnifiedProduct,
     WebhookEvent,
     WebhookKind,
 )
+from app.adapters.catalog import publish_listing, update_listing_prices
 from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.oauth_parse import lazada_order, token_bundle
@@ -187,6 +192,14 @@ class LazadaAdapter(PlatformAdapter):
             occurred_at=unix_time(data.get("status_update_time") or payload.get("timestamp")),
             raw=payload,
         )
+
+    async def publish_product(self, cred: CredentialView, product: UnifiedProduct) -> PublishResult:
+        host = _lazada_host(self.platform, cred)
+        return await publish_listing(self.transport, cred, url=f"{host}/product/publish_product", product=product)
+
+    async def update_price(self, cred: CredentialView, items: list[PriceUpdate]) -> BatchResult:
+        host = _lazada_host(self.platform, cred)
+        return await update_listing_prices(self.transport, cred, url=f"{host}/product/update_price", items=items)
 
     async def ship_order(self, cred: CredentialView, order_id: str, carrier: str, tracking_no: str) -> None:
         host = LAZADA_AUTH_HOST.get(cred.site_code.upper())

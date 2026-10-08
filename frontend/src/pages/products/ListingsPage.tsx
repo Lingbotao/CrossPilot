@@ -1,7 +1,7 @@
 import { PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { listingsApi } from '@/api/listings';
 import { productsApi } from '@/api/products';
@@ -9,9 +9,11 @@ import {
   ListingStatus,
   Perm,
   type AttrTemplateItem,
+  type ListingBatchStatusValue,
   type ListingQuery,
   type ListingStatusValue,
   type ListingView,
+  type PricePreview,
   type SpuListItem,
 } from '@/api/types';
 import { feedback } from '@/app/feedback';
@@ -56,6 +58,14 @@ function isMoney(value: string | undefined): boolean {
   return /^\d+(\.\d+)?$/.test(value.trim());
 }
 
+const BATCH_STATUS: Record<ListingBatchStatusValue, string> = {
+  PENDING: zhCN.publishPage.statusPending,
+  RUNNING: zhCN.publishPage.statusRunning,
+  SUCCEEDED: zhCN.publishPage.statusSucceeded,
+  PARTIAL: zhCN.publishPage.statusPartial,
+  FAILED: zhCN.publishPage.statusFailed,
+};
+
 export function ListingsPage() {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<ListingQuery>({ limit: 20 });
@@ -68,6 +78,11 @@ export function ListingsPage() {
   const [spuId, setSpuId] = useState<string | undefined>();
   const [form] = Form.useForm<ListingForm>();
   const [filterForm] = Form.useForm<FilterForm>();
+  const [priceForm] = Form.useForm<{ price: string; currency: string }>();
+  const [selected, setSelected] = useState<ListingView[]>([]);
+  const [priceOpen, setPriceOpen] = useState(false);
+  const [preview, setPreview] = useState<PricePreview | null>(null);
+  const [priceBatchId, setPriceBatchId] = useState<string | null>(null);
   const shopId = Form.useWatch('shop_id', form);
   const templateId = Form.useWatch('category_mapping_id', form);
 
@@ -107,6 +122,22 @@ export function ListingsPage() {
   const template = templates.data?.items.find((item) => item.id === templateId);
 
   const rows = useMemo(() => [...(list.data?.items ?? []), ...extra], [extra, list.data]);
+  const priceBatch = useQuery({
+    queryKey: ['listing-batch', priceBatchId],
+    queryFn: () => listingsApi.batch(priceBatchId ?? ''),
+    enabled: Boolean(priceBatchId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'PENDING' || status === 'RUNNING' ? 2000 : false;
+    },
+  });
+
+  useEffect(() => {
+    const status = priceBatch.data?.status;
+    if (status && status !== 'PENDING' && status !== 'RUNNING') {
+      void queryClient.invalidateQueries({ queryKey: ['listings'] });
+    }
+  }, [priceBatch.data?.status, queryClient]);
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ['listings'] });
@@ -186,6 +217,35 @@ export function ListingsPage() {
     });
   };
 
+  const pricePayload = (values: { price: string; currency: string }, confirmed: boolean) => ({
+    listing_ids: selected.map((row) => row.id),
+    price: values.price.trim(),
+    currency: values.currency,
+    confirmed,
+  });
+
+  const acceptPrice = async (values: { price: string; currency: string }, confirmed: boolean) => {
+    const batch = await listingsApi.repriceBatch(pricePayload(values, confirmed));
+    setPriceBatchId(batch.id);
+    setPriceOpen(false);
+    setSelected([]);
+    feedback().message.success(copy.batchAccepted);
+  };
+
+  const previewPrice = useMutation({
+    mutationFn: (values: { price: string; currency: string }) => listingsApi.previewPrices(pricePayload(values, false)),
+    onSuccess: async (data, values) => {
+      setPreview(data);
+      if (!data.needs_confirm) {
+        await acceptPrice(values, false);
+      }
+    },
+  });
+
+  const confirmPrice = useMutation({
+    mutationFn: (values: { price: string; currency: string }) => acceptPrice(values, true),
+  });
+
   return (
     <Card title={copy.title}>
       <Typography.Paragraph type="secondary">{copy.description}</Typography.Paragraph>
@@ -218,10 +278,28 @@ export function ListingsPage() {
         </Button>
       </Form>
       <PermissionGuard permission={Perm.PRODUCT_WRITE}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} style={{ marginBottom: 16 }}>
-          {copy.create}
-        </Button>
+        <Space style={{ marginBottom: 16 }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            {copy.create}
+          </Button>
+          <Button
+            disabled={selected.length === 0}
+            onClick={() => {
+              setPreview(null);
+              priceForm.resetFields();
+              setPriceOpen(true);
+            }}
+          >
+            {copy.reprice}
+          </Button>
+        </Space>
       </PermissionGuard>
+      {priceBatch.data ? (
+        <Typography.Paragraph>
+          {zhCN.publishPage.progress}：{BATCH_STATUS[priceBatch.data.status]} · {priceBatch.data.succeeded}/
+          {priceBatch.data.total}
+        </Typography.Paragraph>
+      ) : null}
       {(shops.data?.length ?? 0) === 0 && !shops.isLoading ? (
         <Typography.Paragraph type="secondary">{copy.noShop}</Typography.Paragraph>
       ) : null}
@@ -231,6 +309,10 @@ export function ListingsPage() {
         dataSource={rows}
         pagination={false}
         locale={{ emptyText: copy.empty }}
+        rowSelection={{
+          selectedRowKeys: selected.map((row) => row.id),
+          onChange: (_, picked) => setSelected(picked),
+        }}
         columns={[
           { title: copy.sku, dataIndex: 'sku_code' },
           {
@@ -381,6 +463,64 @@ export function ListingsPage() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title={copy.reprice}
+        open={priceOpen}
+        onCancel={() => setPriceOpen(false)}
+        footer={[
+          <Button key="preview" loading={previewPrice.isPending} onClick={() => priceForm.submit()}>
+            {copy.preview}
+          </Button>,
+          preview?.needs_confirm ? (
+            <Button
+              key="confirm"
+              type="primary"
+              loading={confirmPrice.isPending}
+              onClick={() => {
+                void priceForm.validateFields().then((values) => confirmPrice.mutate(values));
+              }}
+            >
+              {copy.confirmReprice}
+            </Button>
+          ) : null,
+        ]}
+      >
+        <Typography.Paragraph type="secondary">{copy.repriceHint}</Typography.Paragraph>
+        <Form form={priceForm} layout="vertical" onFinish={(values) => previewPrice.mutate(values)}>
+          <Space align="start">
+            <Form.Item
+              name="price"
+              label={copy.newPrice}
+              rules={[
+                { required: true, message: copy.priceRule },
+                {
+                  validator: (_, value: string | undefined) =>
+                    value && isMoney(value) ? Promise.resolve() : Promise.reject(new Error(copy.priceRule)),
+                },
+              ]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item name="currency" label={copy.currency} rules={[{ required: true, message: copy.priceRule }]}>
+              <Select style={{ width: 120 }} options={CURRENCIES.map((code) => ({ value: code, label: code }))} />
+            </Form.Item>
+          </Space>
+        </Form>
+        {preview?.needs_confirm ? (
+          <>
+            <Typography.Text type="warning">{copy.needsConfirm}</Typography.Text>
+            {preview.lines
+              .filter((line) => line.needs_confirm)
+              .map((line) => (
+                <div key={line.listing_id}>
+                  <MoneyText value={line.price_before} currency={line.currency_before ?? undefined} />
+                  {' → '}
+                  <MoneyText value={line.price_after} currency={line.currency_after} />
+                </div>
+              ))}
+          </>
+        ) : null}
       </Modal>
     </Card>
   );

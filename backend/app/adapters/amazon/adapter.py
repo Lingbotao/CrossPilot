@@ -15,14 +15,19 @@ from app.adapters.amazon.sns import (
     verify_sns_signature,
 )
 from app.adapters.base import (
+    BatchResult,
     CredentialView,
     PageResult,
     PlatformAdapter,
+    PriceUpdate,
+    PublishResult,
     RateLimitSpec,
     TokenBundle,
     UnifiedOrder,
+    UnifiedProduct,
     WebhookEvent,
 )
+from app.adapters.catalog import publish_listing, update_listing_prices
 from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError
 from app.adapters.oauth_parse import amazon_order, token_bundle
@@ -129,6 +134,22 @@ class AmazonAdapter(PlatformAdapter):
 
     def parse_webhook(self, body: bytes) -> WebhookEvent:
         return parse_amazon_webhook(body)
+
+    async def publish_product(self, cred: CredentialView, product: UnifiedProduct) -> PublishResult:
+        return await publish_listing(
+            self.transport,
+            cred,
+            url=f"{_ORDERS_URL}/publish_product",
+            product=product,
+        )
+
+    async def update_price(self, cred: CredentialView, items: list[PriceUpdate]) -> BatchResult:
+        return await update_listing_prices(
+            self.transport,
+            cred,
+            url=f"{_ORDERS_URL}/update_price",
+            items=items,
+        )
 
     async def ship_order(self, cred: CredentialView, order_id: str, carrier: str, tracking_no: str) -> None:
         url = f"{_ORDERS_URL}/{quote(order_id, safe='')}/ship_order"

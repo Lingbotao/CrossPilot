@@ -32,7 +32,7 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
-from app.models.listing import CategoryMapping, Listing
+from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem
 from app.models.order import (
     OrderAddressLog,
     OrderFee,
@@ -85,6 +85,8 @@ __all__ = [
     "Sku",
     "Listing",
     "CategoryMapping",
+    "ListingBatch",
+    "ListingBatchItem",
     # 枚举
     "TenantPlan",
     "TenantStatus",

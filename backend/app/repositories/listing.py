@@ -6,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError, ErrorCode
-from app.models.listing import CategoryMapping, Listing
+from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem
 from app.repositories.base import BaseRepository
 
 
@@ -135,6 +135,28 @@ class ListingRepository(BaseRepository[Listing]):
         stmt = stmt.order_by(Listing.id.desc()).limit(limit + 1)
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def linked_pair(self, sku_id: int, shop_id: int) -> Listing | None:
+        stmt = (
+            self.base_select()
+            .where(Listing.sku_id == sku_id, Listing.shop_id == shop_id, Listing.status == "LINKED")
+            .order_by(Listing.id.desc())
+        )
+        return (await self.session.execute(stmt)).scalars().first()
+
+    async def open_pair(self, sku_id: int, shop_id: int) -> Listing | None:
+        stmt = (
+            self.base_select()
+            .where(Listing.sku_id == sku_id, Listing.shop_id == shop_id, Listing.status != "LINKED")
+            .order_by(Listing.id.desc())
+        )
+        return (await self.session.execute(stmt)).scalars().first()
+
+    async def get_many(self, entity_ids: list[int]) -> list[Listing]:
+        if not entity_ids:
+            return []
+        stmt = self.base_select().where(Listing.id.in_(entity_ids))
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def platform_sku_taken(self, shop_id: int, platform_sku_id: str, *, exclude_id: int | None = None) -> bool:
         stmt = self.base_select().where(Listing.shop_id == shop_id, Listing.platform_sku_id == platform_sku_id)
         if exclude_id is not None:
@@ -150,3 +172,15 @@ class ListingRepository(BaseRepository[Listing]):
                 code=ErrorCode.LISTING_PLATFORM_SKU_TAKEN,
                 data={"platform_sku_id": platform_sku_id},
             ) from exc
+
+
+class ListingBatchRepository(BaseRepository[ListingBatch]):
+    model = ListingBatch
+
+
+class ListingBatchItemRepository(BaseRepository[ListingBatchItem]):
+    model = ListingBatchItem
+
+    async def list_for_batch(self, batch_id: int) -> list[ListingBatchItem]:
+        stmt = self.base_select().where(ListingBatchItem.batch_id == batch_id).order_by(ListingBatchItem.id.asc())
+        return list((await self.session.execute(stmt)).scalars().all())

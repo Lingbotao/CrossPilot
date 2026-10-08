@@ -907,3 +907,88 @@ class TestListingMappingIsolation:
         assert _run(_visible(mapping_sql, TENANT_B, map_a, map_b)) == {map_b}
         with pytest.raises(Exception):  # noqa: B017 - Listing 是主数据，应用角色没有 DELETE
             _run(_delete_listing())
+
+
+class TestListingBatchIsolation:
+    def test_tenant_cannot_read_another_tenants_listing_batch(self, migrated: None) -> None:
+        base = 981000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        spu_a, spu_b = base + 2, base + 3
+        sku_a, sku_b = base + 4, base + 5
+        batch_a, batch_b = base + 6, base + 7
+        item_a, item_b = base + 8, base + 9
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', 'batch', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"batch-{shop_id}"},
+                    )
+                for spu_id, tenant_id in ((spu_a, TENANT_A), (spu_b, TENANT_B)):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, 'batch', 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id},
+                    )
+                for sku_id, tenant_id, spu_id in ((sku_a, TENANT_A, spu_a), (sku_b, TENANT_B, spu_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku ("
+                            "id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm"
+                            ") VALUES (:id, :tid, :spu, :code, 100, 10, 10, 10)"
+                        ),
+                        {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": f"BATCH-{sku_id}"},
+                    )
+                for batch_id, tenant_id in ((batch_a, TENANT_A), (batch_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO listing_batch (id, tenant_id, kind, status, total, succeeded, failed, skipped) "
+                            "VALUES (:id, :tid, 'PUBLISH', 'PENDING', 1, 0, 0, 0)"
+                        ),
+                        {"id": batch_id, "tid": tenant_id},
+                    )
+                for item_id, tenant_id, batch_id, sku_id, shop_id in (
+                    (item_a, TENANT_A, batch_a, sku_a, shop_a),
+                    (item_b, TENANT_B, batch_b, sku_b, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO listing_batch_item (id, tenant_id, batch_id, sku_id, shop_id, status) "
+                            "VALUES (:id, :tid, :batch, :sku, :shop, 'PENDING')"
+                        ),
+                        {"id": item_id, "tid": tenant_id, "batch": batch_id, "sku": sku_id, "shop": shop_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_batch() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM listing_batch WHERE id = :id"), {"id": batch_a})
+                await session.commit()
+            await engine.dispose()
+
+        batch_sql = "SELECT id FROM listing_batch WHERE id IN (:a, :b)"
+        item_sql = "SELECT id FROM listing_batch_item WHERE id IN (:a, :b)"
+        _run(_seed())
+        assert _run(_visible(batch_sql, TENANT_A, batch_a, batch_b)) == {batch_a}
+        assert _run(_visible(batch_sql, TENANT_B, batch_a, batch_b)) == {batch_b}
+        assert _run(_visible(item_sql, TENANT_A, item_a, item_b)) == {item_a}
+        assert _run(_visible(item_sql, TENANT_B, item_a, item_b)) == {item_b}
+        with pytest.raises(Exception):  # noqa: B017 - 批次是操作流水，应用角色没有 DELETE
+            _run(_delete_batch())

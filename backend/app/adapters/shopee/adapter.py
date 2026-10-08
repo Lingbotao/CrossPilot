@@ -9,15 +9,20 @@ from typing import Any
 from urllib.parse import quote
 
 from app.adapters.base import (
+    BatchResult,
     CredentialView,
     PageResult,
     PlatformAdapter,
+    PriceUpdate,
+    PublishResult,
     RateLimitSpec,
     TokenBundle,
     UnifiedOrder,
+    UnifiedProduct,
     WebhookEvent,
     WebhookKind,
 )
+from app.adapters.catalog import publish_listing, update_listing_prices
 from app.adapters.credentials import app_credentials
 from app.adapters.oauth_parse import shopee_order, token_bundle
 from app.adapters.quotas import quota_for
@@ -159,6 +164,22 @@ class ShopeeAdapter(PlatformAdapter):
             platform_status=status or None,
             occurred_at=updated,
             raw=payload,
+        )
+
+    async def publish_product(self, cred: CredentialView, product: UnifiedProduct) -> PublishResult:
+        return await publish_listing(
+            self.transport,
+            cred,
+            url=f"{_HOST}/api/v2/product/publish_product",
+            product=product,
+        )
+
+    async def update_price(self, cred: CredentialView, items: list[PriceUpdate]) -> BatchResult:
+        return await update_listing_prices(
+            self.transport,
+            cred,
+            url=f"{_HOST}/api/v2/product/update_price",
+            items=items,
         )
 
     async def ship_order(self, cred: CredentialView, order_id: str, carrier: str, tracking_no: str) -> None:

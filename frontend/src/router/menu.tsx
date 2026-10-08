@@ -29,6 +29,7 @@ import { OrderSettingsPage } from '@/pages/orders/SettingsPage';
 import { CategoryTemplatesPage } from '@/pages/products/CategoryTemplatesPage';
 import { ListingsPage } from '@/pages/products/ListingsPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
+import { PublishPage } from '@/pages/products/PublishPage';
 import { ShopsPage } from '@/pages/shops/ShopsPage';
 import { AuditPage } from '@/pages/system/AuditPage';
 import { MembersPage } from '@/pages/system/MembersPage';
@@ -158,6 +159,16 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         milestone: 'M3（Week 6–7）',
         delivered: true,
         component: ListingsPage,
+      },
+      {
+        key: 'products-publish',
+        path: '/products/publish',
+        label: zhCN.menu.productPublish,
+        icon: null,
+        permission: Perm.PRODUCT_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: PublishPage,
       },
       {
         key: 'products-categories',

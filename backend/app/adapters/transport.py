@@ -53,6 +53,17 @@ class FixtureTransport:
         del method
         body = json_body or {}
         grant = body.get("grant_type") or (params or {}).get("grant_type")
+        if url.endswith("/publish_product"):
+            sku = str(body.get("sku_code") or "sku")
+            shop = str(body.get("shop_id") or "shop")
+            return 200, {
+                "platform_product_id": f"fixture-{platform}-{shop}-{sku}",
+                "platform_sku_id": f"fixture-sku-{platform}-{shop}-{sku}",
+            }
+        if url.endswith("/update_price"):
+            items = body.get("items")
+            count = len(items) if isinstance(items, list) else 0
+            return 200, {"succeeded": count, "failed": 0}
         if url.endswith("/ship_order") or url.rstrip("/").endswith("/shipment"):
             return 200, {"accepted": True, "tracking_no": str(body.get("tracking_no") or "")}
         if url.endswith("/update_address") or url.endswith("/update_note"):

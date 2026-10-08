@@ -74,6 +74,8 @@ export const ErrorCode = {
   SPU_VARIANT_LIMIT: 40004,
   LISTING_PLATFORM_SKU_TAKEN: 40005,
   CATEGORY_TEMPLATE_DUPLICATED: 40006,
+  LISTING_BATCH_TOO_LARGE: 40007,
+  LISTING_PRICE_CONFIRM_REQUIRED: 40008,
   /** 店铺授权过期 —— 前端据此引导用户重新授权 */
   SHOP_GRANT_EXPIRED: 40201,
 
@@ -883,4 +885,88 @@ export interface ListingQuery {
   shop_id?: string;
   platform_product_id?: string;
   status?: ListingStatusValue;
+}
+
+/** ---------- 批量刊登与批量改价（M3-03） ---------- */
+
+export const ListingBatchKind = {
+  PUBLISH: 'PUBLISH',
+  PRICE: 'PRICE',
+} as const;
+
+export type ListingBatchKindValue = (typeof ListingBatchKind)[keyof typeof ListingBatchKind];
+
+export const ListingBatchStatus = {
+  PENDING: 'PENDING',
+  RUNNING: 'RUNNING',
+  SUCCEEDED: 'SUCCEEDED',
+  PARTIAL: 'PARTIAL',
+  FAILED: 'FAILED',
+} as const;
+
+export type ListingBatchStatusValue = (typeof ListingBatchStatus)[keyof typeof ListingBatchStatus];
+
+export const ListingBatchItemStatus = {
+  PENDING: 'PENDING',
+  SUCCEEDED: 'SUCCEEDED',
+  FAILED: 'FAILED',
+  SKIPPED: 'SKIPPED',
+} as const;
+
+export type ListingBatchItemStatusValue = (typeof ListingBatchItemStatus)[keyof typeof ListingBatchItemStatus];
+
+export interface ListingBatchItemView {
+  id: string;
+  sku_id: string;
+  shop_id: string;
+  listing_id: string | null;
+  status: ListingBatchItemStatusValue;
+  error_message: string | null;
+  price_before: string | null;
+  currency_before: string | null;
+  price_after: string | null;
+  currency_after: string | null;
+}
+
+export interface ListingBatchView {
+  id: string;
+  kind: ListingBatchKindValue;
+  status: ListingBatchStatusValue;
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  items: ListingBatchItemView[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublishBatchWrite {
+  sku_ids: string[];
+  shop_ids: string[];
+  price: string;
+  currency: string;
+}
+
+export interface PricePreviewLine {
+  listing_id: string;
+  sku_id: string;
+  shop_id: string;
+  price_before: string | null;
+  currency_before: string | null;
+  price_after: string;
+  currency_after: string;
+  needs_confirm: boolean;
+}
+
+export interface PricePreview {
+  needs_confirm: boolean;
+  lines: PricePreviewLine[];
+}
+
+export interface PriceBatchWrite {
+  listing_ids: string[];
+  price: string;
+  currency: string;
+  confirmed?: boolean;
 }

@@ -19,8 +19,16 @@ from app.schemas.listing import (
     ListingShopOption,
     ListingView,
 )
+from app.schemas.listing_batch import (
+    ListingBatchView,
+    PriceBatchCreate,
+    PriceBatchPreview,
+    PricePreview,
+    PublishBatchCreate,
+)
 from app.schemas.shop import PlatformSiteCatalog
 from app.services.listing import ListingService
+from app.services.listing_batch import ListingBatchService
 
 router = APIRouter(tags=["Listing"])
 
@@ -150,3 +158,70 @@ async def update_listing(
 ) -> ApiResponse[ListingView]:
     data = await ListingService(session).update_listing(listing_id, payload, actor_id=identity.user.id)
     return ok(data, message="Listing 已更新")
+
+
+def _enqueue(kind: str, batch_id: int, tenant_id: int, status: str) -> None:
+    if status != "PENDING":
+        return
+    from app.tasks.batch import enqueue_prices, enqueue_publish
+
+    if kind == "PUBLISH":
+        enqueue_publish(batch_id, tenant_id)
+        return
+    enqueue_prices(batch_id, tenant_id)
+
+
+@router.post("/listing-batches/publish", response_model=ApiResponse[ListingBatchView], summary="批量刊登")
+async def publish_listings(
+    payload: PublishBatchCreate,
+    identity: ProductWriter,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[ListingBatchView]:
+    data = await ListingBatchService(session).accept_publish(
+        payload,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    _enqueue("PUBLISH", data.id, identity.tenant.id, data.status)
+    return ok(data, message="刊登批次已受理")
+
+
+@router.post(
+    "/listing-batches/prices/preview",
+    response_model=ApiResponse[PricePreview],
+    summary="批量改价预览",
+)
+async def preview_listing_prices(
+    payload: PriceBatchPreview,
+    identity: ProductWriter,
+    session: DbSession,
+) -> ApiResponse[PricePreview]:
+    del identity
+    return ok(await ListingBatchService(session).preview_prices(payload))
+
+
+@router.post("/listing-batches/prices", response_model=ApiResponse[ListingBatchView], summary="批量改价")
+async def reprice_listings(
+    payload: PriceBatchCreate,
+    identity: ProductWriter,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[ListingBatchView]:
+    data = await ListingBatchService(session).accept_prices(
+        payload,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    _enqueue("PRICE", data.id, identity.tenant.id, data.status)
+    return ok(data, message="改价批次已受理")
+
+
+@router.get("/listing-batches/{batch_id}", response_model=ApiResponse[ListingBatchView], summary="批次进度")
+async def get_listing_batch(
+    batch_id: int,
+    identity: ProductReader,
+    session: DbSession,
+) -> ApiResponse[ListingBatchView]:
+    del identity
+    return ok(await ListingBatchService(session).get_batch(batch_id))
