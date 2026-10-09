@@ -32,6 +32,7 @@ import { TransfersPage } from '@/pages/inventory/TransfersPage';
 import { OverviewPage } from '@/pages/inventory/OverviewPage';
 import { ReplenishmentPage } from '@/pages/inventory/ReplenishmentPage';
 import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
+import { LandedCostPage } from '@/pages/finance/LandedCostPage';
 import { CertificatesPage } from '@/pages/compliance/CertificatesPage';
 import { ReportPage } from '@/pages/compliance/ReportPage';
 import { HsCodesPage } from '@/pages/compliance/HsCodesPage';
@@ -367,6 +368,27 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     permission: Perm.FINANCE_READ,
     milestone: 'M4/M5',
     delivered: false,
+    children: [
+      {
+        key: 'landed-cost',
+        path: '/finance/landed-cost',
+        label: zhCN.menu.landedCost,
+        icon: null,
+        permission: Perm.LANDED_COST_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: true,
+        component: LandedCostPage,
+      },
+      {
+        key: 'finance-profit',
+        path: '/finance',
+        label: zhCN.menu.financeProfit,
+        icon: null,
+        permission: Perm.FINANCE_READ,
+        milestone: 'M4/M5',
+        delivered: false,
+      },
+    ],
   },
   {
     key: 'members',

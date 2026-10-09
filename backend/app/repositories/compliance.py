@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.compliance import (
@@ -53,6 +53,15 @@ class CountryTaxRuleRepository(BaseRepository[CountryTaxRule]):
             CountryTaxRule.hs_code_pattern.asc(),
             CountryTaxRule.version.desc(),
         ).limit(limit)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def list_effective(self, country: str, on: date) -> list[CountryTaxRule]:
+        stmt = self.base_select().where(
+            CountryTaxRule.country == country,
+            CountryTaxRule.status == TAX_RULE_ACTIVE,
+            CountryTaxRule.effective_from <= on,
+            or_(CountryTaxRule.effective_to.is_(None), CountryTaxRule.effective_to > on),
+        )
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def list_becoming_effective(self, today: date, until: date) -> list[CountryTaxRule]:

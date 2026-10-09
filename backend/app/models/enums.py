@@ -113,6 +113,7 @@ class AuditAction:
     HS_BIND = "HS_BIND"
     TAX_RULE = "TAX_RULE"
     CERT_RECORD = "CERT_RECORD"
+    LANDED_COST_FEE = "LANDED_COST_FEE"
     ROLE_CHANGE = "ROLE_CHANGE"
     SYSTEM_CONFIG = "SYSTEM_CONFIG"
 
@@ -138,6 +139,7 @@ class AuditAction:
         HS_BIND,
         TAX_RULE,
         CERT_RECORD,
+        LANDED_COST_FEE,
         ROLE_CHANGE,
         SYSTEM_CONFIG,
     )

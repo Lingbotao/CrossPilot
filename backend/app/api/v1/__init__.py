@@ -17,6 +17,7 @@ from app.api.v1 import (
     compliance,
     hs_codes,
     inventory,
+    landed_cost,
     listings,
     locale,
     members,
@@ -48,6 +49,7 @@ api_router.include_router(locale.router)
 api_router.include_router(inventory.router)
 api_router.include_router(hs_codes.router)
 api_router.include_router(compliance.router)
+api_router.include_router(landed_cost.router)
 api_router.include_router(webhooks.router)
 
 __all__ = ["api_router"]

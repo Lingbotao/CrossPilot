@@ -13,7 +13,7 @@
 
 典型签名（M4 落地时按此实现）::
 
-    def compute_landed_cost(inputs: LandedCostInput, rules: TaxRuleSet) -> LandedCostResult: ...
+    def compute_landed_cost(data: LandedCostInput, taxes: tuple[TaxFact, ...], fees: tuple[FeeFact, ...]) -> LandedCostResult: ...
 
 铁律：
 - **金额一律 ``Decimal``**，禁止 ``float``（约束 C4）—— 精度损失不可逆；

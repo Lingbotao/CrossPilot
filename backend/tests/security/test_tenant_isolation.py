@@ -1680,6 +1680,26 @@ class TestComplianceConfigIsolation:
             "(:id, :tid, 'US', :category, 'FCC', 'operator note', 'ACTIVE')",
         )
 
+    def test_tenant_cannot_read_another_tenants_landed_cost_fee(self, migrated: None) -> None:
+        _assert_hidden(
+            "landed_cost_fee",
+            (
+                "id, tenant_id, market, channel, fee_code, label, charge, amount, currency, "
+                "effective_from, version, status, source, verified_by, verified_at"
+            ),
+            (
+                "(:id, :tid, 'US', 'AIR', 'BROKERAGE', :label, 'FIXED', 1.000000, 'USD', "
+                "DATE '2026-01-01', 1, 'ACTIVE', 'fee source', 1, now())"
+            ),
+        )
+
+    def test_tenant_cannot_read_another_tenants_landed_cost_calc(self, migrated: None) -> None:
+        _assert_hidden(
+            "landed_cost_calc",
+            "id, tenant_id, market, kind, params, result, complete",
+            "(:id, :tid, 'US', 'CALC', CAST('{}' AS jsonb), CAST('{}' AS jsonb), false)",
+        )
+
     def test_tenant_cannot_read_another_tenants_compliance_notice(self, migrated: None) -> None:
         _assert_hidden(
             "compliance_notice",
@@ -1705,6 +1725,7 @@ def _assert_hidden(table: str, columns: str, values: str) -> None:
                         "pattern": f"{base % 100000000:08d}",
                         "category": f"c{base % 100000000}",
                         "ref": base,
+                        "label": f"f{base % 100000000}",
                     },
                 )
             await session.commit()

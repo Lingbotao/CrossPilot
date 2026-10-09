@@ -103,6 +103,7 @@ export const ErrorCode = {
   EXCHANGE_RATE_MISSING: 70001,
   SETTLEMENT_MISMATCH: 70002,
   LANDED_COST_PARAM_MISSING: 70003,
+  FEE_RULE_OVERLAP: 70004,
 
   // 80xxx 合规
   HS_CODE_MISSING: 80001,
@@ -1507,4 +1508,115 @@ export interface ComplianceReportView {
   yellow: number;
   green: number;
   items: ComplianceReportItem[];
+}
+
+/** ---------- 落地成本（M4-05） ---------- */
+
+export const LANDED_CHANNELS = ['AIR', 'SEA_FCL', 'SEA_LCL', 'EXPRESS', 'PACKET'] as const;
+export const FEE_CHANNELS = [...LANDED_CHANNELS, '*'] as const;
+export const FEE_CODES = [
+  'FIRST_MILE',
+  'BROKERAGE',
+  'COMMISSION',
+  'PAYMENT',
+  'FULFILLMENT',
+  'ADS',
+  'RETURN_RATE',
+  'RETURN_LOSS',
+  'STORAGE',
+  'FX_RESERVE',
+] as const;
+export const FEE_CHARGES = ['RATE', 'FIXED', 'PER_KG', 'PER_CBM', 'PER_CBM_DAY'] as const;
+export const FIRST_MILE_METHODS = ['WEIGHT', 'VOLUME', 'VALUE', 'CHARGEABLE'] as const;
+
+export interface LandedCostFeeCreate {
+  market: string;
+  channel: string;
+  fee_code: string;
+  label: string;
+  charge: string;
+  amount: string;
+  currency: string | null;
+  volumetric_divisor: number | null;
+  effective_from: string;
+  effective_to: string | null;
+  source: string;
+}
+
+export interface LandedCostFeeView {
+  id: string;
+  market: string;
+  channel: string;
+  fee_code: string;
+  label: string;
+  charge: string;
+  amount: string;
+  amount_percent: string | null;
+  currency: string | null;
+  volumetric_divisor: number | null;
+  effective_from: string;
+  effective_to: string | null;
+  version: number;
+  status: string;
+  source: string;
+  verified_by: string;
+  verified_at: string;
+}
+
+export interface LandedCostCalcRequest {
+  market: string;
+  selling_currency: string;
+  channel: string;
+  first_mile_method: string;
+  name?: string;
+  sku_id?: string | null;
+  selling_price?: string | null;
+  purchase_amount?: string | null;
+  purchase_currency?: string | null;
+  fx_rate?: string | null;
+  fx_source?: string;
+  weight_g?: string | null;
+  volume_cm3?: string | null;
+  length_cm?: string | null;
+  width_cm?: string | null;
+  height_cm?: string | null;
+  hs_code?: string;
+  declared_value?: string | null;
+  declared_currency?: string | null;
+  shipment_cost?: string | null;
+  shipment_currency?: string | null;
+  shipment_weight_g?: string | null;
+  shipment_volume_cm3?: string | null;
+  shipment_value?: string | null;
+  storage_days?: number | null;
+}
+
+export interface LandedCostLine {
+  code: string;
+  label: string;
+  amount: string | null;
+  currency: string;
+  formula: string;
+  source: string;
+  complete: boolean;
+}
+
+export interface LandedCostCalcView {
+  id: string;
+  name: string;
+  market: string;
+  currency: string;
+  lines: LandedCostLine[];
+  landed_cost: string | null;
+  net_profit: string | null;
+  net_margin_percent: string | null;
+  roi_percent: string | null;
+  complete: boolean;
+  profit_complete: boolean;
+}
+
+export interface LandedCostCompareView {
+  id: string;
+  left: LandedCostCalcView;
+  right: LandedCostCalcView;
 }

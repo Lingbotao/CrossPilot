@@ -22,6 +22,7 @@ import {
 import { MoneyText } from '@/components/MoneyText';
 import { CostGuard, PermissionGuard } from '@/components/PermissionGuard';
 import zhCN from '@/i18n/zh-CN';
+import { LandedCostCalculator } from '@/pages/finance/LandedCostPage';
 
 const copy = zhCN.productDetail;
 const quality = zhCN.localePage;
@@ -157,6 +158,7 @@ function ProductCertificates({ spuId, skus }: { spuId: string; skus: SkuView[] }
 export function ProductDetailPage() {
   const { spuId } = useParams();
   const navigate = useNavigate();
+  const [costSkuId, setCostSkuId] = useState<string | undefined>();
   const detail = useQuery({
     queryKey: ['product-detail', spuId],
     enabled: Boolean(spuId),
@@ -186,6 +188,7 @@ export function ProductDetailPage() {
   const listings = detail.data?.listings ?? [];
   const images = detail.data?.images ?? [];
   const contents = detail.data?.contents ?? [];
+  const costSku = spu?.skus.find((item) => item.id === costSkuId) ?? spu?.skus[0];
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -246,6 +249,30 @@ export function ProductDetailPage() {
                       },
                     ]}
                   />
+                  {spu && spu.skus.length > 1 ? (
+                    <Select
+                      style={{ width: 240, marginTop: 16 }}
+                      value={costSku?.id}
+                      options={spu.skus.map((item) => ({ value: item.id, label: item.sku_code }))}
+                      onChange={setCostSkuId}
+                    />
+                  ) : null}
+                  {costSku ? (
+                    <div style={{ marginTop: 16 }}>
+                      <LandedCostCalculator
+                        key={costSku.id}
+                        preset={{
+                          skuId: costSku.id,
+                          purchaseAmount: costSku.purchase_price,
+                          purchaseCurrency: costSku.currency,
+                          weightG: costSku.weight_g,
+                          lengthCm: costSku.length_cm,
+                          widthCm: costSku.width_cm,
+                          heightCm: costSku.height_cm,
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </CostGuard>
               ),
             },

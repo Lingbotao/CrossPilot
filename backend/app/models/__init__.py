@@ -51,6 +51,7 @@ from app.models.inventory import (
     StockTransferLine,
     Warehouse,
 )
+from app.models.landed_cost import LandedCostCalc, LandedCostFee
 from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem, ListingDiff
 from app.models.locale import GlossaryTerm, ListingContent, SensitiveTerm
 from app.models.order import (
@@ -130,6 +131,9 @@ __all__ = [
     "ComplianceCertificate",
     "CertRequirementRule",
     "ComplianceNotice",
+    # 财务域（批次 5）
+    "LandedCostFee",
+    "LandedCostCalc",
     # 枚举
     "TenantPlan",
     "TenantStatus",
