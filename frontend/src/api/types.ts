@@ -104,6 +104,8 @@ export const ErrorCode = {
   SETTLEMENT_MISMATCH: 70002,
   LANDED_COST_PARAM_MISSING: 70003,
   FEE_RULE_OVERLAP: 70004,
+  EXCHANGE_RATE_LOCKED: 70005,
+  EXCHANGE_RATE_OVERLAP: 70006,
 
   // 80xxx 合规
   HS_CODE_MISSING: 80001,
@@ -154,6 +156,7 @@ export const Perm = {
   LANDED_COST_READ: 'landed_cost:read',
   LANDED_COST_CALC: 'landed_cost:calc',
   FINANCE_READ: 'finance:read',
+  FINANCE_WRITE: 'finance:write',
   REPORT_EXPORT: 'report:export',
   DASHBOARD_READ: 'dashboard:read',
   AUDIT_READ: 'audit:read',
@@ -1619,4 +1622,134 @@ export interface LandedCostCompareView {
   id: string;
   left: LandedCostCalcView;
   right: LandedCostCalcView;
+}
+
+export const LINE_CODES = [
+  'PURCHASE',
+  'FIRST_MILE',
+  'DUTY',
+  'IMPORT_TAX',
+  'BROKERAGE',
+  'STORAGE',
+  'FX_RESERVE',
+  'COMMISSION',
+  'PAYMENT',
+  'FULFILLMENT',
+  'ADS',
+  'RETURN',
+] as const;
+
+export const RATE_BASES = ['ORDER', 'SETTLEMENT', 'BOOK'] as const;
+export const PROFIT_GRAINS = ['day', 'week', 'month'] as const;
+
+export interface LandedCostToggleWrite {
+  market: string;
+  channel: string;
+  line_code: string;
+  enabled: boolean;
+}
+
+export interface LandedCostToggleView {
+  id: string;
+  market: string;
+  channel: string;
+  line_code: string;
+  enabled: boolean;
+}
+
+export interface LandedCostPricingRequest extends LandedCostCalcRequest {
+  target_margin_percent: string;
+  period_fixed_cost?: string | null;
+}
+
+export interface LandedCostPricePoint {
+  target_margin_percent: string;
+  selling_price: string | null;
+  net_margin_percent: string | null;
+  reachable: boolean;
+  formula: string;
+}
+
+export interface LandedCostPricingView {
+  id: string;
+  suggested_price: string | null;
+  break_even_price: string | null;
+  break_even_quantity: string | null;
+  reachable: boolean;
+  formula: string;
+  quantity_formula: string;
+  currency: string;
+  curve: LandedCostPricePoint[];
+  lines: LandedCostLine[];
+  gaps: string[];
+  complete: boolean;
+}
+
+export interface ExchangeRateCreate {
+  base_currency: string;
+  quote_currency: string;
+  rate: string;
+  basis: string;
+  effective_on: string;
+  source: string;
+}
+
+export interface ExchangeRateView {
+  id: string;
+  base_currency: string;
+  quote_currency: string;
+  rate: string;
+  basis: string;
+  effective_on: string;
+  source: string;
+  locked: boolean;
+}
+
+export interface ProfitMaterializeRequest {
+  market: string;
+  channel: string;
+  first_mile_method: string;
+  date_from: string;
+  date_to: string;
+  book_currency: string;
+  storage_days?: number | null;
+}
+
+export interface ProfitMaterializeView {
+  rows: number;
+  unmatched_items: number;
+  incomplete_rows: number;
+}
+
+export interface ProfitRowView {
+  sku_id: string;
+  shop_id: string;
+  period_start: string;
+  period_end: string;
+  currency: string;
+  book_currency: string;
+  revenue: string;
+  cost_total: string | null;
+  net_profit: string | null;
+  net_margin_percent: string | null;
+  book_revenue: string | null;
+  book_net_profit: string | null;
+  fx_gain: string | null;
+  quantity: number;
+  complete: boolean;
+}
+
+export interface WaterfallStepView {
+  code: string;
+  label: string;
+  amount: string | null;
+  running: string | null;
+  memo: boolean;
+  formula: string;
+}
+
+export interface WaterfallView {
+  currency: string;
+  book_currency: string;
+  steps: WaterfallStepView[];
 }

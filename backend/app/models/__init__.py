@@ -38,6 +38,7 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
+from app.models.finance import ExchangeRate, SkuProfitDaily
 from app.models.hs_code import HsCode, SpuHsBinding
 from app.models.inventory import (
     Inventory,
@@ -51,7 +52,7 @@ from app.models.inventory import (
     StockTransferLine,
     Warehouse,
 )
-from app.models.landed_cost import LandedCostCalc, LandedCostFee
+from app.models.landed_cost import LandedCostCalc, LandedCostFee, LandedCostLineToggle
 from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem, ListingDiff
 from app.models.locale import GlossaryTerm, ListingContent, SensitiveTerm
 from app.models.order import (
@@ -134,6 +135,9 @@ __all__ = [
     # 财务域（批次 5）
     "LandedCostFee",
     "LandedCostCalc",
+    "LandedCostLineToggle",
+    "ExchangeRate",
+    "SkuProfitDaily",
     # 枚举
     "TenantPlan",
     "TenantStatus",

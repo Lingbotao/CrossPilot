@@ -91,6 +91,7 @@ class Perm(StrEnum):
     LANDED_COST_READ = "landed_cost:read"
     LANDED_COST_CALC = "landed_cost:calc"
     FINANCE_READ = "finance:read"
+    FINANCE_WRITE = "finance:write"
     REPORT_EXPORT = "report:export"
     # 看板
     DASHBOARD_READ = "dashboard:read"
@@ -172,6 +173,7 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.ADS_READ,  # 👁
             Perm.LANDED_COST_READ,  # 👁
             Perm.FINANCE_READ,
+            Perm.FINANCE_WRITE,
             Perm.REPORT_EXPORT,
             Perm.DASHBOARD_READ,
         }

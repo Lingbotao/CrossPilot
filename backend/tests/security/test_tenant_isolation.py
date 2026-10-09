@@ -1700,6 +1700,27 @@ class TestComplianceConfigIsolation:
             "(:id, :tid, 'US', 'CALC', CAST('{}' AS jsonb), CAST('{}' AS jsonb), false)",
         )
 
+    def test_tenant_cannot_read_another_tenants_line_toggle(self, migrated: None) -> None:
+        _assert_hidden(
+            "landed_cost_line_toggle",
+            "id, tenant_id, market, channel, line_code, enabled",
+            "(:id, :tid, 'US', 'AIR', 'ADS', false)",
+        )
+
+    def test_tenant_cannot_read_another_tenants_exchange_rate(self, migrated: None) -> None:
+        _assert_hidden(
+            "exchange_rate",
+            "id, tenant_id, base_currency, quote_currency, rate, basis, effective_on, source",
+            "(:id, :tid, 'USD', 'CNY', 7.200000, 'ORDER', DATE '2026-10-01', 'manual source')",
+        )
+
+    def test_tenant_cannot_read_another_tenants_sku_profit_daily(self, migrated: None) -> None:
+        _assert_hidden(
+            "sku_profit_daily",
+            ("id, tenant_id, sku_id, shop_id, stat_date, currency, book_currency, revenue, quantity, lines, complete"),
+            ("(:id, :tid, :ref, :ref, CURRENT_DATE, 'USD', 'CNY', 10.000000, 1, CAST('[]' AS jsonb), false)"),
+        )
+
     def test_tenant_cannot_read_another_tenants_compliance_notice(self, migrated: None) -> None:
         _assert_hidden(
             "compliance_notice",

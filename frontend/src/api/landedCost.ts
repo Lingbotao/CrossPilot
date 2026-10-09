@@ -7,6 +7,10 @@ import type {
   LandedCostCompareView,
   LandedCostFeeCreate,
   LandedCostFeeView,
+  LandedCostPricingRequest,
+  LandedCostPricingView,
+  LandedCostToggleView,
+  LandedCostToggleWrite,
 } from './types';
 
 export const landedCostApi = {
@@ -24,4 +28,13 @@ export const landedCostApi = {
 
   compare: (payload: { left: LandedCostCalcRequest; right: LandedCostCalcRequest }) =>
     api.post<LandedCostCompareView>('/landed-cost/comparisons', payload, { idempotent: true }),
+
+  toggles: (market?: string) =>
+    api.get<LandedCostToggleView[]>('/landed-cost/toggles', { params: market ? { market } : {} }),
+
+  setToggle: (payload: LandedCostToggleWrite) =>
+    api.put<LandedCostToggleView>('/landed-cost/toggles', payload, { idempotent: true }),
+
+  price: (payload: LandedCostPricingRequest) =>
+    api.post<LandedCostPricingView>('/landed-cost/pricing', payload, { idempotent: true }),
 };

@@ -10,7 +10,18 @@ from app.core.deps import DbSession, Identity, require_cost_visibility, require_
 from app.core.errors import ParamInvalidError
 from app.core.permissions import Perm
 from app.core.response import ApiResponse, ok
-from app.schemas.landed_cost import CalcRequest, CalcView, CompareRequest, CompareView, FeeCreate, FeeView
+from app.schemas.landed_cost import (
+    CalcRequest,
+    CalcView,
+    CompareRequest,
+    CompareView,
+    FeeCreate,
+    FeeView,
+    PricingRequest,
+    PricingView,
+    ToggleView,
+    ToggleWrite,
+)
 from app.schemas.listing import parse_id
 from app.schemas.locale import clean_market
 from app.services.landed_cost import LandedCostService
@@ -106,6 +117,52 @@ async def compare(
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> ApiResponse[CompareView]:
     data = await LandedCostService(session).compare(
+        payload,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+        idempotency_key=idempotency_key,
+    )
+    return ok(data)
+
+
+@router.get("/toggles", response_model=ApiResponse[list[ToggleView]], summary="成本项开关")
+async def list_toggles(
+    identity: Reader,
+    _: Visible,
+    session: DbSession,
+    market: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> ApiResponse[list[ToggleView]]:
+    del identity
+    data = await LandedCostService(session).list_toggles(market=_market(market), limit=limit)
+    return ok(data)
+
+
+@router.put("/toggles", response_model=ApiResponse[ToggleView], summary="开关一个成本项")
+async def set_toggle(
+    payload: ToggleWrite,
+    identity: Writer,
+    _: Visible,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[ToggleView]:
+    data = await LandedCostService(session).set_toggle(
+        payload,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data)
+
+
+@router.post("/pricing", response_model=ApiResponse[PricingView], summary="按目标净利率反推售价")
+async def price(
+    payload: PricingRequest,
+    identity: Writer,
+    _: Visible,
+    session: DbSession,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[PricingView]:
+    data = await LandedCostService(session).price(
         payload,
         tenant_id=identity.tenant.id,
         actor_id=identity.user.id,

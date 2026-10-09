@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
-from app.engines.landed_cost import CHARGES, FEE_CODES, FIRST_MILE_METHODS
+from app.engines.landed_cost import CHARGES, FEE_CODES, FIRST_MILE_METHODS, LINE_CODES
 from app.schemas.compliance import clean_currency
 from app.schemas.listing import parse_optional_id
 from app.schemas.locale import clean_market
@@ -314,3 +314,94 @@ class CompareView(BaseModel):
 class CompareRequest(BaseModel):
     left: CalcRequest
     right: CalcRequest
+
+
+def clean_line_code(value: object) -> str:
+    if not isinstance(value, str) or value.strip().upper() not in LINE_CODES:
+        raise ValueError("成本项不在支持列表中")
+    return value.strip().upper()
+
+
+class ToggleWrite(BaseModel):
+    market: str
+    channel: str
+    line_code: str
+    enabled: bool
+
+    @field_validator("market", mode="before")
+    @classmethod
+    def _market(cls, value: object) -> str:
+        return clean_market(value)
+
+    @field_validator("channel", mode="before")
+    @classmethod
+    def _channel(cls, value: object) -> str:
+        return clean_channel(value, allow_any=True)
+
+    @field_validator("line_code", mode="before")
+    @classmethod
+    def _line(cls, value: object) -> str:
+        return clean_line_code(value)
+
+
+class ToggleView(BaseModel):
+    id: int
+    market: str
+    channel: str
+    line_code: str
+    enabled: bool
+
+    @field_serializer("id")
+    def _id(self, value: int) -> str:
+        return str(value)
+
+
+class PricingRequest(CalcRequest):
+    target_margin_percent: Decimal
+    period_fixed_cost: Decimal | None = None
+
+    @field_validator("target_margin_percent", mode="before")
+    @classmethod
+    def _margin(cls, value: object) -> Decimal:
+        parsed = decimal_text(value)
+        if parsed < 0 or parsed > _HUNDRED:
+            raise ValueError("目标净利率必须在 0 到 100 之间")
+        return parsed
+
+    @field_validator("period_fixed_cost", mode="before")
+    @classmethod
+    def _period_cost(cls, value: object) -> Decimal | None:
+        parsed = optional_money(value)
+        if parsed is not None and parsed < 0:
+            raise ValueError("期间固定成本不能为负")
+        return parsed
+
+
+class PricePointView(BaseModel):
+    target_margin_percent: str
+    selling_price: str | None
+    net_margin_percent: str | None
+    reachable: bool
+    formula: str
+
+
+class PricingView(BaseModel):
+    id: int
+    suggested_price: str | None
+    break_even_price: str | None
+    break_even_quantity: str | None
+    reachable: bool
+    formula: str
+    quantity_formula: str
+    currency: str
+    curve: list[PricePointView]
+    lines: list[CostLineView]
+    gaps: list[str]
+    complete: bool
+
+    @field_serializer("id")
+    def _id(self, value: int) -> str:
+        return str(value)
+
+
+_HUNDRED = Decimal("100")

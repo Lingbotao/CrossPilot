@@ -56,6 +56,13 @@ class TestCostVisibilityRule:
 
     def test_ops_staff_cannot_read_finance(self) -> None:
         assert not role_has_permission(RoleCode.OPS_STAFF, Perm.FINANCE_READ.value)
+        assert not role_has_permission(RoleCode.OPS_STAFF, Perm.FINANCE_WRITE.value)
+
+    def test_only_finance_role_writes_rates(self) -> None:
+        assert role_has_permission(RoleCode.FINANCE, Perm.FINANCE_WRITE.value)
+        assert not role_has_permission(RoleCode.OPS_MANAGER, Perm.FINANCE_WRITE.value)
+        assert not role_has_permission(RoleCode.PURCHASER, Perm.FINANCE_WRITE.value)
+        assert not role_has_permission(RoleCode.VIEWER, Perm.FINANCE_WRITE.value)
 
     def test_cs_cannot_read_cost(self) -> None:
         assert not role_can_view_cost(RoleCode.CS)
@@ -87,6 +94,7 @@ class TestRoleBehaviors:
             Perm.INVENTORY_WRITE,
             Perm.PURCHASE_WRITE,
             Perm.COMPLIANCE_WRITE,
+            Perm.FINANCE_WRITE,
         }
         assert not (ROLE_PERMISSIONS[RoleCode.VIEWER] & write_perms)
 

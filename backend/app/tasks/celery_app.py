@@ -40,6 +40,7 @@ celery_app = Celery(
         "app.tasks.report",
         "app.tasks.inventory",
         "app.tasks.compliance",
+        "app.tasks.finance",
     ],
 )
 

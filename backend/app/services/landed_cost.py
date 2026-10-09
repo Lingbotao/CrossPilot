@@ -8,7 +8,8 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
-from app.engines.landed_cost import FeeFact, LandedCostInput, LandedCostResult, TaxFact, compute_landed_cost
+from app.engines.landed_cost import CostLine, FeeFact, LandedCostInput, LandedCostResult, TaxFact, compute_landed_cost
+from app.engines.pricing import PricingResult, suggest_prices
 from app.models.compliance import CountryTaxRule
 from app.models.enums import AuditAction
 from app.models.landed_cost import (
@@ -16,12 +17,18 @@ from app.models.landed_cost import (
     COMPARE_KIND,
     FEE_ACTIVE,
     FEE_DISABLED,
+    PRICING_KIND,
     LandedCostCalc,
     LandedCostFee,
+    LandedCostLineToggle,
 )
 from app.repositories.compliance import CountryTaxRuleRepository
 from app.repositories.identity import AuditLogRepository
-from app.repositories.landed_cost import LandedCostCalcRepository, LandedCostFeeRepository
+from app.repositories.landed_cost import (
+    LandedCostCalcRepository,
+    LandedCostFeeRepository,
+    LandedCostToggleRepository,
+)
 from app.repositories.product import SkuRepository
 from app.schemas.common import money_to_str
 from app.schemas.landed_cost import (
@@ -32,6 +39,11 @@ from app.schemas.landed_cost import (
     CostLineView,
     FeeCreate,
     FeeView,
+    PricePointView,
+    PricingRequest,
+    PricingView,
+    ToggleView,
+    ToggleWrite,
 )
 from app.services.compliance_windows import format_fraction, fraction_to_percent, percent_to_fraction, ranges_overlap
 from app.services.tax_rule import retire_end
@@ -189,6 +201,7 @@ class LandedCostService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.fees = LandedCostFeeRepository(session)
+        self.toggles = LandedCostToggleRepository(session)
         self.calcs = LandedCostCalcRepository(session)
         self.taxes = CountryTaxRuleRepository(session)
         self.skus = SkuRepository(session)
@@ -296,9 +309,7 @@ class LandedCostService:
                     raise AppError("幂等键已被另一次计算使用", code=ErrorCode.IDEMPOTENCY_CONFLICT)
                 return CalcView.model_validate(existing.result)
         await self._ensure_sku(payload.sku_id)
-        on = payload.as_of or datetime.now(UTC).date()
-        taxes, fees = await self._facts(payload.market, on)
-        result = compute_landed_cost(_to_input(payload), taxes, fees)
+        result = await self._compute(payload)
         row = await self._store(
             kind=CALC_KIND,
             market=payload.market,
@@ -352,10 +363,98 @@ class LandedCostService:
         await self.session.flush()
         return view
 
+    async def price(
+        self,
+        payload: PricingRequest,
+        *,
+        tenant_id: int,
+        actor_id: int,
+        idempotency_key: str | None,
+    ) -> PricingView:
+        key = _clean_key(idempotency_key)
+        if key:
+            existing = await self.calcs.get_by_key(key)
+            if existing is not None:
+                if existing.kind != PRICING_KIND:
+                    raise AppError("幂等键已被另一次计算使用", code=ErrorCode.IDEMPOTENCY_CONFLICT)
+                return PricingView.model_validate(existing.result)
+        await self._ensure_sku(payload.sku_id)
+        on = payload.as_of or datetime.now(UTC).date()
+        taxes, fees, disabled = await self.load_rules(payload.market, payload.channel, on)
+        priced = suggest_prices(
+            _to_input(payload),
+            taxes,
+            fees,
+            target_margin_percent=payload.target_margin_percent,
+            period_fixed_cost=payload.period_fixed_cost,
+            disabled=disabled,
+        )
+        row = await self._store(
+            kind=PRICING_KIND,
+            market=payload.market,
+            sku_id=payload.sku_id,
+            key=key,
+            params=payload.model_dump(mode="json"),
+            actor_id=actor_id,
+            tenant_id=tenant_id,
+            complete=priced.reachable,
+        )
+        view = _pricing_view(row.id, priced)
+        row.result = view.model_dump(mode="json")
+        await self.session.flush()
+        return view
+
+    async def list_toggles(self, *, market: str | None, limit: int) -> list[ToggleView]:
+        rows = await self.toggles.list_visible(market=market, limit=min(limit, LIST_LIMIT))
+        return [_toggle_view(row) for row in rows]
+
+    async def set_toggle(self, payload: ToggleWrite, *, tenant_id: int, actor_id: int) -> ToggleView:
+        row = await self.toggles.get_key(payload.market, payload.channel, payload.line_code)
+        before = None if row is None else {"enabled": str(row.enabled).lower(), "line_code": row.line_code}
+        if row is None:
+            row = LandedCostLineToggle(
+                tenant_id=tenant_id,
+                market=payload.market,
+                channel=payload.channel,
+                line_code=payload.line_code,
+                enabled=payload.enabled,
+                created_by=actor_id,
+                updated_by=actor_id,
+            )
+            await self.toggles.add(row)
+            await self.session.refresh(row)
+        else:
+            row.enabled = payload.enabled
+            row.updated_by = actor_id
+            self.toggles.assert_tenant_owned(row)
+            await self.session.flush()
+        await self.audit.append_action(
+            tenant_id=tenant_id,
+            user_id=actor_id,
+            action=AuditAction.LANDED_COST_TOGGLE,
+            resource="landed_cost_line_toggle",
+            resource_id=row.id,
+            before=before,
+            after={"enabled": str(row.enabled).lower(), "line_code": row.line_code},
+        )
+        return _toggle_view(row)
+
+    async def load_rules(
+        self,
+        market: str,
+        channel: str,
+        on: date,
+    ) -> tuple[list[TaxFact], list[FeeFact], frozenset[str]]:
+        taxes, fees = await self._facts(market, on)
+        return taxes, fees, await self._disabled(market, channel)
+
     async def _compute(self, payload: CalcRequest) -> LandedCostResult:
         on = payload.as_of or datetime.now(UTC).date()
-        taxes, fees = await self._facts(payload.market, on)
-        return compute_landed_cost(_to_input(payload), taxes, fees)
+        taxes, fees, disabled = await self.load_rules(payload.market, payload.channel, on)
+        return compute_landed_cost(_to_input(payload), taxes, fees, disabled=disabled)
+
+    async def _disabled(self, market: str, channel: str) -> frozenset[str]:
+        return _disabled_of(await self.toggles.list_effective(market, channel), channel)
 
     async def _facts(self, market: str, on: date) -> tuple[list[TaxFact], list[FeeFact]]:
         taxes = [_tax_fact(row) for row in _latest_tax(await self.taxes.list_effective(market, on))]
@@ -393,6 +492,65 @@ class LandedCostService:
         await self.calcs.add(row)
         await self.session.refresh(row)
         return row
+
+
+def _toggle_view(row: LandedCostLineToggle) -> ToggleView:
+    return ToggleView(
+        id=row.id,
+        market=row.market,
+        channel=row.channel,
+        line_code=row.line_code,
+        enabled=row.enabled,
+    )
+
+
+def _pricing_view(calc_id: int, priced: PricingResult) -> PricingView:
+    verified_lines = priced.verified.lines if priced.verified is not None else ()
+    return PricingView(
+        id=calc_id,
+        suggested_price=money_to_str(priced.suggested_price),
+        break_even_price=money_to_str(priced.break_even_price),
+        break_even_quantity=money_to_str(priced.break_even_quantity),
+        reachable=priced.reachable,
+        formula=priced.formula,
+        quantity_formula=priced.quantity_formula,
+        currency=priced.currency,
+        curve=[
+            PricePointView(
+                target_margin_percent=money_to_str(point.target_margin_percent) or "0.000000",
+                selling_price=money_to_str(point.selling_price),
+                net_margin_percent=money_to_str(point.net_margin_percent),
+                reachable=point.reachable,
+                formula=point.formula,
+            )
+            for point in priced.curve
+        ],
+        lines=[_line_view(line) for line in verified_lines],
+        gaps=list(priced.gaps),
+        complete=priced.reachable,
+    )
+
+
+def _line_view(line: CostLine) -> CostLineView:
+    return CostLineView(
+        code=line.code,
+        label=line.label,
+        amount=money_to_str(line.amount),
+        currency=line.currency,
+        formula=line.formula,
+        source=line.source,
+        complete=line.complete,
+    )
+
+
+def _disabled_of(rows: list[LandedCostLineToggle], channel: str) -> frozenset[str]:
+    chosen: dict[str, LandedCostLineToggle] = {}
+    for row in rows:
+        if row.channel == "*" and row.line_code not in chosen:
+            chosen[row.line_code] = row
+        if row.channel == channel:
+            chosen[row.line_code] = row
+    return frozenset(code for code, row in chosen.items() if not row.enabled)
 
 
 def _clean_key(value: str | None) -> str | None:

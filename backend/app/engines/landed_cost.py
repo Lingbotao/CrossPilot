@@ -47,6 +47,20 @@ LANDED_CODES: tuple[str, ...] = (
     "FX_RESERVE",
 )
 DEDUCTION_CODES: tuple[str, ...] = ("COMMISSION", "PAYMENT", "FULFILLMENT", "ADS", "RETURN")
+LINE_CODES: tuple[str, ...] = (
+    "PURCHASE",
+    "FIRST_MILE",
+    "DUTY",
+    "IMPORT_TAX",
+    "BROKERAGE",
+    "STORAGE",
+    "FX_RESERVE",
+    "COMMISSION",
+    "PAYMENT",
+    "FULFILLMENT",
+    "ADS",
+    "RETURN",
+)
 LINE_LABELS: dict[str, str] = {
     "PURCHASE": "采购成本",
     "FIRST_MILE": "头程物流费",
@@ -148,16 +162,26 @@ def compute_landed_cost(
     data: LandedCostInput,
     taxes: tuple[TaxFact, ...] | list[TaxFact],
     fees: tuple[FeeFact, ...] | list[FeeFact],
+    disabled: frozenset[str] | set[str] | None = None,
 ) -> LandedCostResult:
     currency = data.selling_currency
-    purchase = _purchase(data, currency)
-    duty = _duty(data, taxes, currency)
-    import_tax = _import_tax(data, taxes, currency, duty)
-    brokerage = _brokerage(data, fees, currency)
-    storage = _storage(data, fees, currency)
-    first_mile = _first_mile(data, fees, currency, purchase)
-    fx_reserve = _fx_reserve(fees, data.channel, currency, (purchase, first_mile, duty, import_tax, brokerage, storage))
-    price_lines = _price_lines(data, fees, currency)
+    off = frozenset(disabled or ())
+
+    def gate(line: CostLine) -> CostLine:
+        if line.code not in off:
+            return line
+        return CostLine(line.code, LINE_LABELS[line.code], Decimal("0"), currency, "本项已关闭。", "租户配置", True)
+
+    purchase = gate(_purchase(data, currency))
+    duty = gate(_duty(data, taxes, currency))
+    import_tax = gate(_import_tax(data, taxes, currency, duty))
+    brokerage = gate(_brokerage(data, fees, currency))
+    storage = gate(_storage(data, fees, currency))
+    first_mile = gate(_first_mile(data, fees, currency, purchase))
+    fx_reserve = gate(
+        _fx_reserve(fees, data.channel, currency, (purchase, first_mile, duty, import_tax, brokerage, storage))
+    )
+    price_lines = tuple(gate(line) for line in _price_lines(data, fees, currency))
     ordered = (purchase, first_mile, duty, import_tax, brokerage, storage, fx_reserve, *price_lines)
     landed_parts = [line for line in ordered if line.code in LANDED_CODES]
     deduction_parts = [line for line in ordered if line.code in DEDUCTION_CODES]

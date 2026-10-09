@@ -32,7 +32,10 @@ import { TransfersPage } from '@/pages/inventory/TransfersPage';
 import { OverviewPage } from '@/pages/inventory/OverviewPage';
 import { ReplenishmentPage } from '@/pages/inventory/ReplenishmentPage';
 import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
+import { ExchangeRatesPage } from '@/pages/finance/ExchangeRatesPage';
 import { LandedCostPage } from '@/pages/finance/LandedCostPage';
+import { ProfitPage } from '@/pages/finance/ProfitPage';
+import { WaterfallPage } from '@/pages/finance/WaterfallPage';
 import { CertificatesPage } from '@/pages/compliance/CertificatesPage';
 import { ReportPage } from '@/pages/compliance/ReportPage';
 import { HsCodesPage } from '@/pages/compliance/HsCodesPage';
@@ -380,13 +383,34 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         component: LandedCostPage,
       },
       {
-        key: 'finance-profit',
-        path: '/finance',
-        label: zhCN.menu.financeProfit,
+        key: 'exchange-rates',
+        path: '/finance/rates',
+        label: zhCN.menu.exchangeRates,
         icon: null,
         permission: Perm.FINANCE_READ,
-        milestone: 'M4/M5',
-        delivered: false,
+        milestone: 'M4（Week 8–9）',
+        delivered: true,
+        component: ExchangeRatesPage,
+      },
+      {
+        key: 'sku-profit',
+        path: '/finance/profit',
+        label: zhCN.menu.skuProfit,
+        icon: null,
+        permission: Perm.FINANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: true,
+        component: ProfitPage,
+      },
+      {
+        key: 'profit-waterfall',
+        path: '/finance/waterfall',
+        label: zhCN.menu.profitWaterfall,
+        icon: null,
+        permission: Perm.FINANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: true,
+        component: WaterfallPage,
       },
     ],
   },

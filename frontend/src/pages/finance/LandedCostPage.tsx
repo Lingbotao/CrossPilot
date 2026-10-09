@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Select, Space, Table, Typography } from 'antd';
+import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Select, Space, Switch, Table, Typography } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useState } from 'react';
 
@@ -12,12 +12,14 @@ import {
   FEE_CODES,
   FIRST_MILE_METHODS,
   LANDED_CHANNELS,
+  LINE_CODES,
   Perm,
   type LandedCostCalcRequest,
   type LandedCostCalcView,
   type LandedCostCompareView,
   type LandedCostFeeView,
   type LandedCostLine,
+  type LandedCostPricingView,
 } from '@/api/types';
 import { feedback } from '@/app/feedback';
 import { MoneyText } from '@/components/MoneyText';
@@ -69,6 +71,8 @@ interface CalcForm {
   shipment_weight_g_b?: string;
   shipment_volume_cm3_b?: string;
   shipment_value_b?: string;
+  target_margin_percent?: string;
+  period_fixed_cost?: string;
 }
 
 interface FeeForm {
@@ -203,6 +207,7 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
   const compare = Form.useWatch('compare', form);
   const method = Form.useWatch('first_mile_method', form);
   const [outcome, setOutcome] = useState<LandedCostCalcView | LandedCostCompareView | null>(null);
+  const [pricing, setPricing] = useState<LandedCostPricingView | null>(null);
   const views = outcome && 'left' in outcome ? [outcome.left, outcome.right] : outcome ? [outcome] : [];
 
   const run = useMutation<LandedCostCalcView | LandedCostCompareView, Error, CalcForm>({
@@ -223,6 +228,24 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
       if (incomplete) {
         feedback().message.warning(copy.incomplete);
       }
+    },
+  });
+
+  const price = useMutation({
+    mutationFn: (values: CalcForm) => {
+      const target = values.target_margin_percent?.trim() ?? '';
+      if (!target) {
+        return Promise.reject(new Error(copy.targetMargin));
+      }
+      return landedCostApi.price({
+        ...toRequest(values, 'A', preset?.skuId),
+        target_margin_percent: target,
+        period_fixed_cost: textOrNull(values.period_fixed_cost),
+      });
+    },
+    onSuccess: (data) => {
+      setPricing(data);
+      feedback().message.success(copy.priced);
     },
   });
 
@@ -264,6 +287,12 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
           </Form.Item>
           <Form.Item name="selling_price" label={copy.sellingPrice}>
             <Input style={{ width: 140 }} />
+          </Form.Item>
+          <Form.Item name="target_margin_percent" label={copy.targetMargin}>
+            <Input style={{ width: 160 }} />
+          </Form.Item>
+          <Form.Item name="period_fixed_cost" label={copy.periodFixed}>
+            <Input style={{ width: 160 }} />
           </Form.Item>
           <Form.Item name="purchase_amount" label={copy.purchase}>
             <Input style={{ width: 140 }} />
@@ -360,11 +389,58 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
           </Space>
         ) : null}
         <PermissionGuard permission={Perm.LANDED_COST_CALC}>
-          <Button type="primary" htmlType="submit" loading={run.isPending}>
-            {copy.calculate}
-          </Button>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={run.isPending}>
+              {copy.calculate}
+            </Button>
+            <Button loading={price.isPending} onClick={() => price.mutate(form.getFieldsValue(true) as CalcForm)}>
+              {copy.suggest}
+            </Button>
+          </Space>
         </PermissionGuard>
       </Form>
+      {price.isError ? <Alert style={{ marginTop: 16 }} type="error" message={messageOf(price.error)} /> : null}
+      {pricing ? (
+        <Space direction="vertical" size={12} style={{ width: '100%', marginTop: 16 }}>
+          <Typography.Paragraph>{pricing.formula}</Typography.Paragraph>
+          <Typography.Paragraph>{pricing.quantity_formula}</Typography.Paragraph>
+          <Space size={24} wrap>
+            <span>
+              {copy.suggested}{' '}
+              <MoneyText value={pricing.suggested_price} currency={pricing.currency} />
+            </span>
+            <span>
+              {copy.breakEvenPrice}{' '}
+              <MoneyText value={pricing.break_even_price} currency={pricing.currency} />
+            </span>
+            <span>
+              {copy.breakEvenQty} {pricing.break_even_quantity ?? '—'}
+            </span>
+          </Space>
+          <Table
+            rowKey="target_margin_percent"
+            pagination={false}
+            dataSource={pricing.curve}
+            columns={[
+              { title: copy.margin, dataIndex: 'target_margin_percent', render: (value: string) => `${value}%` },
+              {
+                title: copy.suggested,
+                render: (_, row) => <MoneyText value={row.selling_price} currency={pricing.currency} />,
+              },
+              {
+                title: copy.margin,
+                dataIndex: 'net_margin_percent',
+                render: (value: string | null) => (value ? `${value}%` : '—'),
+              },
+              {
+                title: copy.state,
+                dataIndex: 'reachable',
+                render: (value: boolean) => (value ? copy.reachable : copy.unreachable),
+              },
+            ]}
+          />
+        </Space>
+      ) : null}
       {run.isError ? <Alert style={{ marginTop: 16 }} type="error" message={messageOf(run.error)} /> : null}
       {views.length > 0 ? (
         <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 16 }}>
@@ -509,6 +585,71 @@ function FeePanel() {
   );
 }
 
+function TogglePanel() {
+  const queryClient = useQueryClient();
+  const [form] = Form.useForm<{ market: string; channel: string; line_code: string; enabled: boolean }>();
+  const toggles = useQuery({ queryKey: ['landed-cost-toggles'], queryFn: () => landedCostApi.toggles() });
+  const save = useMutation({
+    mutationFn: (values: { market: string; channel: string; line_code: string; enabled: boolean }) =>
+      landedCostApi.setToggle({ ...values, enabled: values.enabled !== false }),
+    onSuccess: async () => {
+      feedback().message.success(copy.toggleSaved);
+      await queryClient.invalidateQueries({ queryKey: ['landed-cost-toggles'] });
+    },
+  });
+  return (
+    <Card title={copy.toggles}>
+      {toggles.isError ? <Alert type="error" message={messageOf(toggles.error)} /> : null}
+      <Table
+        rowKey="id"
+        loading={toggles.isLoading}
+        pagination={false}
+        dataSource={toggles.data ?? []}
+        columns={[
+          { title: copy.market, dataIndex: 'market' },
+          {
+            title: copy.channel,
+            dataIndex: 'channel',
+            render: (value: string) => copy.channels[value as keyof typeof copy.channels] ?? value,
+          },
+          {
+            title: copy.line,
+            dataIndex: 'line_code',
+            render: (value: string) => copy.lines[value as keyof typeof copy.lines] ?? value,
+          },
+          {
+            title: copy.state,
+            dataIndex: 'enabled',
+            render: (value: boolean) => (value ? copy.enabled : copy.disabled),
+          },
+        ]}
+      />
+      <PermissionGuard permission={Perm.LANDED_COST_CALC}>
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }} initialValues={{ enabled: true }} onFinish={(values) => save.mutate(values)}>
+          <Space wrap align="start">
+            <Form.Item name="market" label={copy.market} rules={[{ required: true }]}>
+              <Select style={{ width: 120 }} options={CONTENT_MARKETS.map((item) => ({ value: item, label: item }))} />
+            </Form.Item>
+            <Form.Item name="channel" label={copy.channel} rules={[{ required: true }]}>
+              <Select style={{ width: 160 }} options={FEE_CHANNELS.map((item) => ({ value: item, label: copy.channels[item] }))} />
+            </Form.Item>
+            <Form.Item name="line_code" label={copy.line} rules={[{ required: true }]}>
+              <Select style={{ width: 180 }} options={LINE_CODES.map((item) => ({ value: item, label: copy.lines[item] }))} />
+            </Form.Item>
+            <Form.Item name="enabled" label={copy.enabled} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          </Space>
+          {save.isError ? <Alert type="error" message={messageOf(save.error)} /> : null}
+          <Button type="primary" htmlType="submit" loading={save.isPending}>
+            {copy.saveToggle}
+          </Button>
+        </Form>
+      </PermissionGuard>
+    </Card>
+  );
+}
+
 export function LandedCostPage() {
   return (
     <CostGuard>
@@ -516,6 +657,7 @@ export function LandedCostPage() {
         <Typography.Title level={3}>{copy.title}</Typography.Title>
         <Alert type="info" message={copy.disclaimer} />
         <LandedCostCalculator />
+        <TogglePanel />
         <FeePanel />
       </Space>
     </CostGuard>

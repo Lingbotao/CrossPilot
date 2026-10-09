@@ -28,7 +28,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import AuditMixin, Base, PKMixin, TenantMixin
-from app.engines.landed_cost import CHANNELS, CHARGES, FEE_CODES
+from app.engines.landed_cost import CHANNELS, CHARGES, FEE_CODES, LINE_CODES
 from app.models.locale import CONTENT_MARKETS
 
 FEE_ACTIVE = "ACTIVE"
@@ -36,7 +36,8 @@ FEE_DISABLED = "DISABLED"
 FEE_STATUSES: tuple[str, ...] = (FEE_ACTIVE, FEE_DISABLED)
 CALC_KIND = "CALC"
 COMPARE_KIND = "COMPARE"
-CALC_KINDS: tuple[str, ...] = (CALC_KIND, COMPARE_KIND)
+PRICING_KIND = "PRICING"
+CALC_KINDS: tuple[str, ...] = (CALC_KIND, COMPARE_KIND, PRICING_KIND)
 
 _MARKET_SQL = ", ".join(f"'{item}'" for item in CONTENT_MARKETS)
 _CHANNEL_SQL = ", ".join(f"'{item}'" for item in CHANNELS)
@@ -44,6 +45,7 @@ _FEE_SQL = ", ".join(f"'{item}'" for item in FEE_CODES)
 _CHARGE_SQL = ", ".join(f"'{item}'" for item in CHARGES)
 _STATUS_SQL = ", ".join(f"'{item}'" for item in FEE_STATUSES)
 _KIND_SQL = ", ".join(f"'{item}'" for item in CALC_KINDS)
+_LINE_SQL = ", ".join(f"'{item}'" for item in LINE_CODES)
 
 
 def _sql_in(name: str, sql: str) -> CheckConstraint:
@@ -121,4 +123,29 @@ class LandedCostCalc(Base, PKMixin, TenantMixin, AuditMixin):
         _sql_in("kind", _KIND_SQL),
         CheckConstraint("idempotency_key IS NULL OR char_length(btrim(idempotency_key)) > 0", name="idempotency_key"),
         Index("ix_landed_cost_calc_tenant_id_created_at", "tenant_id", "created_at"),
+    )
+
+
+class LandedCostLineToggle(Base, PKMixin, TenantMixin, AuditMixin):
+    """十二个成本项的开关。没有记录视为开启。"""
+
+    __tablename__ = "landed_cost_line_toggle"
+
+    market: Mapped[str] = mapped_column(String(2), nullable=False)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    line_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "market",
+            "channel",
+            "line_code",
+            name="uq_landed_cost_line_toggle_key",
+        ),
+        _sql_in("market", _MARKET_SQL),
+        _sql_in("channel", _CHANNEL_SQL),
+        _sql_in("line_code", _LINE_SQL),
+        Index("ix_landed_cost_line_toggle_tenant_id_market", "tenant_id", "market"),
     )
