@@ -15,6 +15,7 @@ from app.api.v1 import (
     audit,
     auth,
     listings,
+    locale,
     members,
     order_status,
     orders,
@@ -40,6 +41,7 @@ api_router.include_router(rate_limits.router)
 api_router.include_router(orders.router)
 api_router.include_router(products.router)
 api_router.include_router(listings.router)
+api_router.include_router(locale.router)
 api_router.include_router(webhooks.router)
 
 __all__ = ["api_router"]

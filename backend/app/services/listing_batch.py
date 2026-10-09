@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.base import CredentialView, PriceUpdate, PublishResult, UnifiedProduct
 from app.adapters.bootstrap import register_builtin_adapters
 from app.adapters.errors import AdapterError, RetryDecision
+from app.adapters.locale import content_language
 from app.adapters.registry import adapter_registry
 from app.adapters.transport import use_fixture_transport
 from app.core.context import get_tenant_id
@@ -24,6 +25,7 @@ from app.models.listing import MAX_BATCH_ITEMS, Listing, ListingBatch, ListingBa
 from app.models.platform import Shop
 from app.models.product import Sku
 from app.repositories.listing import ListingBatchItemRepository, ListingBatchRepository, ListingRepository
+from app.repositories.locale import ListingContentRepository
 from app.repositories.platform import ShopCredentialRepository, ShopRepository
 from app.repositories.product import SkuRepository, SpuRepository
 from app.schemas.listing_batch import (
@@ -36,6 +38,7 @@ from app.schemas.listing_batch import (
     PublishBatchCreate,
 )
 from app.services.credential_service import view_from_row
+from app.services.locale_text import require_published_title
 
 PRICE_CHANGE_CONFIRM_RATIO = Decimal("0.20")
 BatchWorker = Callable[[ListingBatch, ListingBatchItem], Awaitable[None]]
@@ -149,6 +152,7 @@ class ListingBatchService:
         self.skus = SkuRepository(session)
         self.shops = ShopRepository(session)
         self.spus = SpuRepository(session)
+        self.contents = ListingContentRepository(session)
         self.catalog: CatalogPort = catalog if catalog is not None else AdapterCatalog(session)
 
     async def _bind_tenant(self) -> None:
@@ -336,10 +340,23 @@ class ListingBatchService:
         shop = await self.shops.get_or_404(item.shop_id)
         if listing.price is None or listing.currency is None:
             raise ParamInvalidError("刊登需要售价和币种")
-        spu = await self.spus.get_or_404(sku.spu_id)
+        await self.spus.get_or_404(sku.spu_id)
+        lang = content_language(shop.site_code)
+        if lang is None:
+            raise AppError(
+                "该站点没有内容语言",
+                code=ErrorCode.CONTENT_NOT_REVIEWED,
+                data={"site_code": shop.site_code},
+            )
+        content = await self.contents.get_active(listing.id, lang)
+        title = require_published_title(
+            "" if content is None else content.quality_status,
+            "" if content is None else content.title,
+            lang=lang,
+        )
         result = await self.catalog.publish(
             shop,
-            title=spu.title,
+            title=title,
             sku_code=sku.sku_code,
             price=listing.price,
             currency=listing.currency,

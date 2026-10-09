@@ -78,6 +78,8 @@ export const ErrorCode = {
   LISTING_PRICE_CONFIRM_REQUIRED: 40008,
   PRODUCT_IMPORT_INVALID: 40009,
   IMAGE_FILE_INVALID: 40010,
+  CONTENT_NOT_REVIEWED: 40011,
+  LOCALE_TERM_DUPLICATED: 40012,
   /** 店铺授权过期 —— 前端据此引导用户重新授权 */
   SHOP_GRANT_EXPIRED: 40201,
 
@@ -1030,4 +1032,130 @@ export interface PriceBatchWrite {
   price: string;
   currency: string;
   confirmed?: boolean;
+}
+
+/** ---------- 多语言文案（M3-05） ---------- */
+
+export const CONTENT_LANGUAGES = [
+  'zh-CN',
+  'zh-TW',
+  'en',
+  'id',
+  'th',
+  'vi',
+  'ms',
+  'es',
+  'pt',
+  'de',
+  'fr',
+  'it',
+  'ja',
+] as const;
+
+export const CONTENT_MARKETS = [
+  'US',
+  'CA',
+  'MX',
+  'UK',
+  'GB',
+  'DE',
+  'FR',
+  'IT',
+  'ES',
+  'JP',
+  'AU',
+  'SG',
+  'MY',
+  'TH',
+  'ID',
+  'VN',
+  'PH',
+  'TW',
+  'BR',
+] as const;
+
+export type ContentQuality = 'UNTRANSLATED' | 'MT_DRAFT' | 'REVIEWED' | 'PUBLISHED';
+
+export interface GlossaryHit {
+  source_term: string;
+  target_term: string;
+}
+
+export interface ListingContentView {
+  id: string;
+  listing_id: string;
+  lang: string;
+  title: string;
+  description: string;
+  bullet_points: string[];
+  quality_status: ContentQuality;
+  needs_review: boolean;
+  replaced_terms: GlossaryHit[];
+}
+
+export interface ListingContentQuery {
+  cursor?: string;
+  limit?: number;
+  listing_id?: string;
+  lang?: string;
+  quality_status?: ContentQuality;
+}
+
+export interface ListingContentWrite {
+  listing_id: string;
+  lang: string;
+  title: string;
+  description: string;
+  bullet_points: string[];
+  confirm_review: boolean;
+}
+
+export interface MachineDraftWrite {
+  listing_id: string;
+  source_lang: string;
+  target_lang: string;
+}
+
+export interface SensitiveHit {
+  field: string;
+  keyword: string;
+  suggest_replacement: string | null;
+}
+
+export interface SensitiveScanWrite {
+  market: string;
+  lang: string;
+  title: string;
+  description: string;
+  bullet_points: string[];
+}
+
+export interface GlossaryTermView {
+  id: string;
+  source_lang: string;
+  source_term: string;
+  target_lang: string;
+  target_term: string;
+}
+
+export interface GlossaryTermWrite {
+  source_lang: string;
+  source_term: string;
+  target_lang: string;
+  target_term: string;
+}
+
+export interface SensitiveTermView {
+  id: string;
+  market: string;
+  lang: string;
+  keyword: string;
+  suggest_replacement: string | null;
+}
+
+export interface SensitiveTermWrite {
+  market: string;
+  lang: string;
+  keyword: string;
+  suggest_replacement?: string | null;
 }

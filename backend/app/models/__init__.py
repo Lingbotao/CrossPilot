@@ -33,6 +33,7 @@ from app.models.enums import (
     UserStatus,
 )
 from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem, ListingDiff
+from app.models.locale import GlossaryTerm, ListingContent, SensitiveTerm
 from app.models.order import (
     OrderAddressLog,
     OrderFee,
@@ -89,6 +90,9 @@ __all__ = [
     "ListingBatch",
     "ListingBatchItem",
     "ListingDiff",
+    "ListingContent",
+    "GlossaryTerm",
+    "SensitiveTerm",
     # 枚举
     "TenantPlan",
     "TenantStatus",

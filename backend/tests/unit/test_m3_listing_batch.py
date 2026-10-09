@@ -3,6 +3,7 @@
 import inspect
 from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -224,6 +225,8 @@ def _service(
         side_effect=lambda entity_id: shops[entity_id] if entity_id in shops else (_ for _ in ()).throw(NotFoundError())
     )
     service.spus.get_or_404 = AsyncMock(return_value=spu)
+    service.contents = MagicMock()
+    service.contents.get_active = AsyncMock(return_value=SimpleNamespace(quality_status="PUBLISHED", title="T恤"))
     return service, listings, batches, catalog
 
 
@@ -291,6 +294,19 @@ async def test_one_sku_publishes_to_two_shops_and_skips_an_existing_link() -> No
     assert created.platform_sku_id == "S-32-TEE-RED"
     assert created.price == Decimal("19.900000")
     assert catalog.prices == []
+
+
+async def test_unreviewed_language_blocks_shop_publish() -> None:
+    service, listings, _batches, catalog = _service()
+    service.contents.get_active = AsyncMock(return_value=SimpleNamespace(quality_status="MT_DRAFT", title="Draft"))
+    accepted = await service.accept_publish(_publish(["21"], ["31"]), tenant_id=9, actor_id=3)
+    finished = await service.run_publish(accepted.id)
+    assert finished.status == "FAILED"
+    assert finished.failed == 1
+    assert listings[0].status == "DRAFT"
+    assert listings[0].platform_product_id is None
+    assert catalog.prices == []
+    assert finished.items[0].error_message == "该站点语言（en）尚未人工校对并发布"
 
 
 async def test_one_failed_shop_does_not_undo_the_linked_shop() -> None:

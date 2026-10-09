@@ -1102,3 +1102,115 @@ class TestCatalogMediaIsolation:
             _run(_delete_image())
         with pytest.raises(Exception):  # noqa: B017 - 差异清单是流水，应用角色没有 DELETE
             _run(_delete_diff())
+
+
+class TestLocaleIsolation:
+    def test_tenant_cannot_read_another_tenants_copy_glossary_or_sensitive_term(self, migrated: None) -> None:
+        base = 983000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        spu_a, spu_b = base + 2, base + 3
+        sku_a, sku_b = base + 4, base + 5
+        listing_a, listing_b = base + 6, base + 7
+        content_a, content_b = base + 8, base + 9
+        glossary_a, glossary_b = base + 10, base + 11
+        sensitive_a, sensitive_b = base + 12, base + 13
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', 'locale', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"locale-{shop_id}"},
+                    )
+                for spu_id, tenant_id in ((spu_a, TENANT_A), (spu_b, TENANT_B)):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, 'locale', 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id},
+                    )
+                for sku_id, tenant_id, spu_id in ((sku_a, TENANT_A, spu_a), (sku_b, TENANT_B, spu_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku ("
+                            "id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm"
+                            ") VALUES (:id, :tid, :spu, :code, 100, 10, 10, 10)"
+                        ),
+                        {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": f"LOCALE-{sku_id}"},
+                    )
+                for listing_id, tenant_id, sku_id, shop_id in (
+                    (listing_a, TENANT_A, sku_a, shop_a),
+                    (listing_b, TENANT_B, sku_b, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO listing (id, tenant_id, sku_id, shop_id, status) "
+                            "VALUES (:id, :tid, :sku, :shop, 'DRAFT')"
+                        ),
+                        {"id": listing_id, "tid": tenant_id, "sku": sku_id, "shop": shop_id},
+                    )
+                for content_id, tenant_id, listing_id in (
+                    (content_a, TENANT_A, listing_a),
+                    (content_b, TENANT_B, listing_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO listing_content ("
+                            "id, tenant_id, listing_id, lang, title, description, bullet_points, quality_status"
+                            ") VALUES (:id, :tid, :listing, 'en', 'Cup', '', '[]'::jsonb, 'MT_DRAFT')"
+                        ),
+                        {"id": content_id, "tid": tenant_id, "listing": listing_id},
+                    )
+                for term_id, tenant_id in ((glossary_a, TENANT_A), (glossary_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO glossary_term ("
+                            "id, tenant_id, source_lang, source_term, target_lang, target_term"
+                            ") VALUES (:id, :tid, 'zh-CN', :term, 'en', 'Brand')"
+                        ),
+                        {"id": term_id, "tid": tenant_id, "term": f"品牌{term_id}"},
+                    )
+                for term_id, tenant_id in ((sensitive_a, TENANT_A), (sensitive_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sensitive_term ("
+                            "id, tenant_id, market, lang, keyword, suggest_replacement"
+                            ") VALUES (:id, :tid, 'SG', 'en', :word, 'care')"
+                        ),
+                        {"id": term_id, "tid": tenant_id, "word": f"cure{term_id}"},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_content() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM listing_content WHERE id = :id"), {"id": content_a})
+                await session.commit()
+            await engine.dispose()
+
+        content_sql = "SELECT id FROM listing_content WHERE id IN (:a, :b)"
+        glossary_sql = "SELECT id FROM glossary_term WHERE id IN (:a, :b)"
+        sensitive_sql = "SELECT id FROM sensitive_term WHERE id IN (:a, :b)"
+        _run(_seed())
+        assert _run(_visible(content_sql, TENANT_A, content_a, content_b)) == {content_a}
+        assert _run(_visible(content_sql, TENANT_B, content_a, content_b)) == {content_b}
+        assert _run(_visible(glossary_sql, TENANT_A, glossary_a, glossary_b)) == {glossary_a}
+        assert _run(_visible(glossary_sql, TENANT_B, glossary_a, glossary_b)) == {glossary_b}
+        assert _run(_visible(sensitive_sql, TENANT_A, sensitive_a, sensitive_b)) == {sensitive_a}
+        assert _run(_visible(sensitive_sql, TENANT_B, sensitive_a, sensitive_b)) == {sensitive_b}
+        with pytest.raises(Exception):  # noqa: B017 - 文案是主数据，应用角色没有 DELETE
+            _run(_delete_content())
