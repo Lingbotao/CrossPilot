@@ -1620,7 +1620,7 @@ class TestComplianceConfigIsolation:
                 "id, tenant_id, country, tax_type, hs_code_pattern, rate, basis_numerator, "
                 "basis_denominator, effective_from, version, status, source, verified_by, verified_at"
             ),
-            "(:id, :tid, 'SG', 'GST', '*', 0.010000, 1, 1, DATE '2026-01-01', 1, 'ACTIVE', 'test source', 1, now())",
+            "(:id, :tid, 'SG', 'GST', :pattern, 0.010000, 1, 1, DATE '2026-01-01', 1, 'ACTIVE', 'test source', 1, now())",
         )
 
     def test_tenant_cannot_read_another_tenants_certificate(self, migrated: None) -> None:
@@ -1677,14 +1677,14 @@ class TestComplianceConfigIsolation:
         _assert_hidden(
             "cert_requirement_rule",
             "id, tenant_id, market, category_code, cert_type, source, status",
-            "(:id, :tid, 'US', 'wireless', 'FCC', 'operator note', 'ACTIVE')",
+            "(:id, :tid, 'US', :category, 'FCC', 'operator note', 'ACTIVE')",
         )
 
     def test_tenant_cannot_read_another_tenants_compliance_notice(self, migrated: None) -> None:
         _assert_hidden(
             "compliance_notice",
             "id, tenant_id, kind, level, ref_id, due_on, summary",
-            "(:id, :tid, 'TAX_EFFECTIVE', 'D7', 1, DATE '2026-10-16', 'notice')",
+            "(:id, :tid, 'TAX_EFFECTIVE', 'D7', :ref, DATE '2026-10-16', 'notice')",
         )
 
 
@@ -1699,7 +1699,13 @@ def _assert_hidden(table: str, columns: str, values: str) -> None:
             for row_id, tenant_id in ((row_a, TENANT_A), (row_b, TENANT_B)):
                 await session.execute(
                     text(f"INSERT INTO {table} ({columns}) VALUES {values}"),
-                    {"id": row_id, "tid": tenant_id},
+                    {
+                        "id": row_id,
+                        "tid": tenant_id,
+                        "pattern": f"{base % 100000000:08d}",
+                        "category": f"c{base % 100000000}",
+                        "ref": base,
+                    },
                 )
             await session.commit()
         await engine.dispose()

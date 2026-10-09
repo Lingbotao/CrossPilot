@@ -147,6 +147,7 @@ class ProductService:
             brand=payload.brand,
             material=payload.material,
             purpose=payload.purpose,
+            category_code=payload.category_code,
             status=payload.status,
             created_by=actor_id,
             updated_by=actor_id,
@@ -178,7 +179,7 @@ class ProductService:
             if not payload.title:
                 raise ParamInvalidError("标题不能为空")
             spu.title = payload.title
-        for field in ("brand", "material", "purpose"):
+        for field in ("brand", "material", "purpose", "category_code"):
             if field in payload.model_fields_set:
                 setattr(spu, field, getattr(payload, field))
         if "status" in payload.model_fields_set and payload.status and payload.status != spu.status:
@@ -195,6 +196,8 @@ class ProductService:
             )
         spu.updated_by = actor_id
         await self.session.flush()
+        # onupdate=now() expires updated_at; a sync read then raises MissingGreenlet.
+        await self.session.refresh(spu)
         return await self._detail(spu, can_view_cost=can_view_cost)
 
     async def add_sku(
@@ -252,6 +255,7 @@ class ProductService:
         sku.currency = currency
         sku.updated_by = actor_id
         await self.session.flush()
+        await self.session.refresh(sku)
         return self._sku_view(sku, can_view_cost=can_view_cost)
 
     async def _ensure_code_free(self, sku_code: str, *, exclude_id: int | None = None) -> None:
@@ -266,6 +270,7 @@ class ProductService:
             brand=spu.brand,
             material=spu.material,
             purpose=spu.purpose,
+            category_code=spu.category_code,
             status=spu.status,
             skus=[self._sku_view(sku, can_view_cost=can_view_cost) for sku in skus],
             created_at=spu.created_at,

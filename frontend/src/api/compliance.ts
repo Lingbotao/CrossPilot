@@ -9,6 +9,7 @@ import type {
   CertificateImportResult,
   CertificateView,
   ComplianceAlertView,
+  ComplianceReportView,
   HsBindRequest,
   HsCodeHit,
   SpuHsBindingView,
@@ -68,4 +69,6 @@ export const complianceApi = {
     api.post<CertRequirementView>(`/cert-requirements/${encodeURIComponent(ruleId)}/retire`, {}, { idempotent: true }),
 
   alerts: () => api.get<ComplianceAlertView[]>('/compliance-alerts'),
+
+  report: () => api.get<ComplianceReportView>('/compliance-report'),
 };

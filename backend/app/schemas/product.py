@@ -191,6 +191,7 @@ class SpuCreate(BaseModel):
     brand: str | None = Field(default=None, max_length=128)
     material: str | None = Field(default=None, max_length=128)
     purpose: str | None = Field(default=None, max_length=256)
+    category_code: str | None = Field(default=None, max_length=64)
     status: str = "DRAFT"
     skus: list[SkuWrite] = Field(default_factory=list, max_length=200)
 
@@ -219,6 +220,11 @@ class SpuCreate(BaseModel):
     def _purpose(cls, value: object) -> str | None:
         return clean_text(value, limit=256)
 
+    @field_validator("category_code", mode="before")
+    @classmethod
+    def _category(cls, value: object) -> str | None:
+        return clean_text(value, limit=64)
+
     @field_validator("status")
     @classmethod
     def _status(cls, value: str) -> str:
@@ -232,6 +238,7 @@ class SpuPatch(BaseModel):
     brand: str | None = None
     material: str | None = None
     purpose: str | None = None
+    category_code: str | None = None
     status: str | None = None
 
     @field_validator("title", mode="before")
@@ -260,6 +267,11 @@ class SpuPatch(BaseModel):
     @classmethod
     def _purpose(cls, value: object) -> str | None:
         return clean_text(value, limit=256)
+
+    @field_validator("category_code", mode="before")
+    @classmethod
+    def _category(cls, value: object) -> str | None:
+        return clean_text(value, limit=64)
 
     @field_validator("status")
     @classmethod
@@ -317,6 +329,7 @@ class SpuDetail(BaseModel):
     brand: str | None
     material: str | None
     purpose: str | None
+    category_code: str | None
     status: str
     skus: list[SkuView]
     created_at: datetime

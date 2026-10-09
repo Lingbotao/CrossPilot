@@ -736,6 +736,7 @@ export interface SpuDetail {
   brand: string | null;
   material: string | null;
   purpose: string | null;
+  category_code: string | null;
   status: ProductStatusValue;
   skus: SkuView[];
   created_at: string;
@@ -759,6 +760,7 @@ export interface SpuCreate {
   brand?: string | null;
   material?: string | null;
   purpose?: string | null;
+  category_code?: string | null;
   status?: ProductStatusValue;
   skus?: SkuWrite[];
 }
@@ -768,6 +770,7 @@ export interface SpuPatch {
   brand?: string | null;
   material?: string | null;
   purpose?: string | null;
+  category_code?: string | null;
   status?: ProductStatusValue;
 }
 
@@ -1484,4 +1487,24 @@ export interface ComplianceAlertView {
   due_on: string;
   summary: string;
   emailed_at: string | null;
+}
+
+export interface ComplianceReportItem {
+  level: string;
+  code: string;
+  spu_id: string;
+  sku_id: string | null;
+  sku_code: string | null;
+  title: string;
+  market: string | null;
+  cert_type: string | null;
+  summary: string;
+  fix_path: string;
+}
+
+export interface ComplianceReportView {
+  red: number;
+  yellow: number;
+  green: number;
+  items: ComplianceReportItem[];
 }

@@ -18,6 +18,7 @@ from app.schemas.compliance import (
     CertRequirementCreate,
     CertRequirementView,
     ComplianceAlertView,
+    ComplianceReportView,
     TaxRuleCreate,
     TaxRuleView,
     clean_tax_type,
@@ -26,6 +27,7 @@ from app.schemas.listing import parse_id
 from app.schemas.locale import clean_market
 from app.services.certificate import CertificateService
 from app.services.compliance_alert import ComplianceAlertService
+from app.services.compliance_check import ComplianceCheckService
 from app.services.tax_rule import TaxRuleService
 
 router = APIRouter(tags=["合规"])
@@ -253,6 +255,15 @@ async def retire_cert_requirement(
         actor_id=identity.user.id,
     )
     return ok(data, message="认证要求已停用")
+
+
+@router.get("/compliance-report", response_model=ApiResponse[ComplianceReportView], summary="合规体检")
+async def compliance_report(
+    identity: ComplianceReader,
+    session: DbSession,
+) -> ApiResponse[ComplianceReportView]:
+    del identity
+    return ok(await ComplianceCheckService(session).report())
 
 
 @router.get("/compliance-alerts", response_model=ApiResponse[list[ComplianceAlertView]], summary="合规提醒")

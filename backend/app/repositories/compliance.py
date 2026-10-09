@@ -15,7 +15,8 @@ from app.models.compliance import (
     ComplianceNotice,
     CountryTaxRule,
 )
-from app.models.product import Sku
+from app.models.hs_code import SpuHsBinding
+from app.models.product import Sku, Spu
 from app.repositories.base import BaseRepository
 
 
@@ -165,3 +166,41 @@ async def list_compliance_tenant_ids(session: AsyncSession) -> list[int]:
         )
     )
     return [int(item) for item in rows.scalars().all()]
+
+
+class ComplianceReportRepository:
+    """体检用的只读查询。租户条件由 ORM 过滤器加上。"""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def spus(self, limit: int) -> list[Spu]:
+        stmt = select(Spu).where(Spu.deleted_at.is_(None)).order_by(Spu.id.desc()).limit(limit)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def skus_for(self, spu_ids: list[int]) -> list[Sku]:
+        if not spu_ids:
+            return []
+        stmt = select(Sku).where(Sku.deleted_at.is_(None), Sku.spu_id.in_(spu_ids)).order_by(Sku.id.asc())
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def hs_for(self, spu_ids: list[int]) -> list[SpuHsBinding]:
+        if not spu_ids:
+            return []
+        stmt = select(SpuHsBinding).where(SpuHsBinding.spu_id.in_(spu_ids))
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def certs_for(self, sku_ids: list[int]) -> list[ComplianceCertificate]:
+        if not sku_ids:
+            return []
+        stmt = select(ComplianceCertificate).where(ComplianceCertificate.sku_id.in_(sku_ids))
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def active_rules(self, limit: int) -> list[CertRequirementRule]:
+        stmt = (
+            select(CertRequirementRule)
+            .where(CertRequirementRule.status == REQUIREMENT_ACTIVE)
+            .order_by(CertRequirementRule.id.asc())
+            .limit(limit)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())

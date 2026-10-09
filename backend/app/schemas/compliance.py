@@ -269,6 +269,36 @@ class ComplianceAlertView(BaseModel):
         return _id_text(value)
 
 
+class ComplianceReportItem(BaseModel):
+    level: str
+    code: str
+    spu_id: int
+    sku_id: int | None
+    sku_code: str | None
+    title: str
+    market: str | None
+    cert_type: str | None
+    summary: str
+    fix_path: str
+
+    @field_serializer("spu_id")
+    def _spu(self, value: int) -> str:
+        return _id_text(value)
+
+    @field_serializer("sku_id")
+    def _sku(self, value: int | None) -> str | None:
+        if value is None:
+            return None
+        return _id_text(value)
+
+
+class ComplianceReportView(BaseModel):
+    red: int
+    yellow: int
+    green: int
+    items: list[ComplianceReportItem]
+
+
 def threshold_text(amount: Decimal | None) -> str | None:
     return money_to_str(amount)
 
@@ -281,6 +311,8 @@ __all__ = [
     "CertificateImportResult",
     "CertificateView",
     "ComplianceAlertView",
+    "ComplianceReportItem",
+    "ComplianceReportView",
     "TaxRuleCreate",
     "TaxRuleView",
     "clean_cert_type",

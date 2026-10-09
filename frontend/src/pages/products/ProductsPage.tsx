@@ -54,6 +54,7 @@ interface SpuForm {
   brand?: string;
   material?: string;
   purpose?: string;
+  category_code?: string;
   status: ProductStatusValue;
   skus: SkuForm[];
 }
@@ -196,6 +197,7 @@ export function ProductsPage() {
       brand: detail.data.brand ?? undefined,
       material: detail.data.material ?? undefined,
       purpose: detail.data.purpose ?? undefined,
+      category_code: detail.data.category_code ?? undefined,
       status: detail.data.status,
     });
   }, [detail.data, spuForm]);
@@ -216,6 +218,7 @@ export function ProductsPage() {
         brand: values.brand?.trim() || null,
         material: values.material?.trim() || null,
         purpose: values.purpose?.trim() || null,
+        category_code: values.category_code?.trim() || null,
         status: values.status,
         skus: (values.skus ?? []).map((row) => toSku(row, canViewCost)),
       }),
@@ -233,6 +236,7 @@ export function ProductsPage() {
         brand: values.brand?.trim() || null,
         material: values.material?.trim() || null,
         purpose: values.purpose?.trim() || null,
+        category_code: values.category_code?.trim() || null,
         status: values.status,
       }),
     onSuccess: async () => {
@@ -439,6 +443,9 @@ export function ProductsPage() {
           <Form.Item name="purpose" label={copy.purpose}>
             <Input />
           </Form.Item>
+          <Form.Item name="category_code" label={copy.categoryCode} extra={copy.categoryHint}>
+            <Input />
+          </Form.Item>
           <Form.Item name="status" label={copy.status}>
             <Select options={statusOptions()} />
           </Form.Item>
@@ -481,6 +488,9 @@ export function ProductsPage() {
                 <Input />
               </Form.Item>
               <Form.Item name="purpose" label={copy.purpose}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="category_code" label={copy.categoryCode} extra={copy.categoryHint}>
                 <Input />
               </Form.Item>
               <Form.Item name="status" label={copy.status}>

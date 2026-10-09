@@ -37,10 +37,15 @@ class Spu(Base, PKMixin, TenantMixin, AuditMixin, SoftDeleteMixin):
     brand: Mapped[str | None] = mapped_column(String(128), nullable=True)
     material: Mapped[str | None] = mapped_column(String(128), nullable=True)
     purpose: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    category_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", server_default="DRAFT")
 
     __table_args__ = (
         CheckConstraint(f"status IN ({PRODUCT_STATUS_SQL})", name="status"),
+        CheckConstraint(
+            "category_code IS NULL OR char_length(category_code) > 0",
+            name="ck_spu_category_code",
+        ),
         Index("ix_spu_tenant_id_status", "tenant_id", "status"),
     )
 

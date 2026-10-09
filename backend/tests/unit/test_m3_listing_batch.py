@@ -227,6 +227,7 @@ def _service(
     service.spus.get_or_404 = AsyncMock(return_value=spu)
     service.contents = MagicMock()
     service.contents.get_active = AsyncMock(return_value=SimpleNamespace(quality_status="PUBLISHED", title="T恤"))
+    service._compliance_note = AsyncMock(return_value=None)
     return service, listings, batches, catalog
 
 
@@ -293,6 +294,25 @@ async def test_one_sku_publishes_to_two_shops_and_skips_an_existing_link() -> No
     assert created.platform_product_id == "P-32-TEE-RED"
     assert created.platform_sku_id == "S-32-TEE-RED"
     assert created.price == Decimal("19.900000")
+    assert catalog.prices == []
+
+
+async def test_missing_hs_blocks_before_the_platform_call() -> None:
+    service, listings, _batches, catalog = _service()
+    service._compliance_note = AsyncMock(
+        side_effect=AppError(
+            "SG 未绑定 HS 编码。请在商品详情核对官方编码后绑定，再刊登。",
+            code=ErrorCode.HS_CODE_MISSING,
+        )
+    )
+    accepted = await service.accept_publish(_publish(["21"], ["31"]), tenant_id=9, actor_id=3)
+    finished = await service.run_publish(accepted.id)
+    assert finished.status == "FAILED"
+    assert finished.failed == 1
+    assert listings[0].status == "DRAFT"
+    assert listings[0].platform_product_id is None
+    assert finished.items[0].error_message is not None
+    assert "HS" in finished.items[0].error_message
     assert catalog.prices == []
 
 

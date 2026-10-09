@@ -210,6 +210,7 @@ def _stamp_sku(obj: Sku, entity_id: int) -> Sku:
 def _service() -> tuple[ProductService, list[Sku]]:
     session = MagicMock()
     session.flush = AsyncMock()
+    session.refresh = AsyncMock()
     service = ProductService(session)
     stored: list[Sku] = []
     saved: dict[int, Spu] = {}

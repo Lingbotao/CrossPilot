@@ -33,6 +33,7 @@ import { OverviewPage } from '@/pages/inventory/OverviewPage';
 import { ReplenishmentPage } from '@/pages/inventory/ReplenishmentPage';
 import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
 import { CertificatesPage } from '@/pages/compliance/CertificatesPage';
+import { ReportPage } from '@/pages/compliance/ReportPage';
 import { HsCodesPage } from '@/pages/compliance/HsCodesPage';
 import { TaxRulesPage } from '@/pages/compliance/TaxRulesPage';
 import { CategoryTemplatesPage } from '@/pages/products/CategoryTemplatesPage';
@@ -314,7 +315,8 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         icon: null,
         permission: Perm.COMPLIANCE_READ,
         milestone: 'M4（Week 8–9）',
-        delivered: false,
+        delivered: true,
+        component: ReportPage,
       },
       {
         key: 'compliance-hs',

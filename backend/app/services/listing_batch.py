@@ -37,6 +37,7 @@ from app.schemas.listing_batch import (
     PricePreviewLine,
     PublishBatchCreate,
 )
+from app.services.compliance_check import ComplianceCheckService
 from app.services.credential_service import view_from_row
 from app.services.locale_text import require_published_title
 
@@ -354,6 +355,7 @@ class ListingBatchService:
             "" if content is None else content.title,
             lang=lang,
         )
+        note = await self._compliance_note(sku, shop, title=title, lang=lang)
         result = await self.catalog.publish(
             shop,
             title=title,
@@ -367,7 +369,15 @@ class ListingBatchService:
         listing.updated_by = batch.created_by
         await self.listings.flush_unique(result.platform_sku_id)
         item.status = "SUCCEEDED"
-        item.error_message = None
+        item.error_message = note
+
+    async def _compliance_note(self, sku: Sku, shop: Shop, *, title: str, lang: str) -> str | None:
+        return await ComplianceCheckService(self.session).note_for_publish(
+            sku=sku,
+            shop=shop,
+            title=title,
+            lang=lang,
+        )
 
     async def _reprice_item(self, batch: ListingBatch, item: ListingBatchItem) -> None:
         if item.listing_id is None or item.price_after is None or item.currency_after is None:

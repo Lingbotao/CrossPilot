@@ -356,6 +356,8 @@ export const zhCN = {
     brand: '品牌',
     material: '材质',
     purpose: '用途',
+    categoryCode: '类目代码',
+    categoryHint: '与认证要求里的类目代码一致。留空则刊登时不按认证规则拦截。',
     skuCount: '变体数',
     updatedAt: '更新时间',
     empty: '还没有商品。创建一个 SPU，并至少填写一个 SKU 的重量和尺寸。',
@@ -505,7 +507,8 @@ export const zhCN = {
 
   publishPage: {
     title: '批量刊登',
-    description: '选择本地 SKU 和目标店铺。同一条 SKU 会按店铺各生成一条 Listing。已经关联过的不会重复刊登。',
+    description:
+      '选择本地 SKU 和目标店铺。同一条 SKU 会按店铺各生成一条 Listing。已经关联过的不会重复刊登。缺少该站点 HS 编码，或类目要求的认证缺失、过期，会拦截这一条并给出修复说明。即将到期和敏感词只提醒。',
     sku: '本地 SKU',
     shop: '目标店铺',
     price: '本批售价',
@@ -860,6 +863,25 @@ export const zhCN = {
     gapExpired: '已过期',
     reason: '原因',
     alerts: '待处理提醒',
+  },
+
+  reportPage: {
+    title: '合规体检',
+    disclaimer:
+      '清单来自当前台账和人工录入的规则，不是法定禁售清单。未填写类目代码的商品不会按认证要求拦截。禁售词在多语言页维护，命中只提醒、不拦截刊登。',
+    red: '红灯',
+    yellow: '黄灯',
+    green: '绿灯',
+    empty: '没有待处理的合规问题。',
+    level: '档位',
+    problem: '问题',
+    market: '市场',
+    product: '商品',
+    sku: 'SKU',
+    fix: '去处理',
+    print: '打印报告',
+    l1: '拦截',
+    l2: '提醒',
   },
 } as const;
 
