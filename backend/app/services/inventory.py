@@ -10,7 +10,8 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from decimal import Decimal
+from typing import Any, Literal, Protocol
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,22 +30,33 @@ from app.core.errors import (
     InventoryInsufficientError,
     NotFoundError,
     ParamInvalidError,
+    StockTakingStateError,
+    TransferStateError,
+    TransferWarehouseError,
 )
 from app.core.logging import get_logger
 from app.core.pagination import PageData, build_cursor_page, decode_cursor
 from app.engines.inventory import (
     Allocation,
     BinView,
+    StockMove,
+    cancel_transit_moves,
     chunk_updates,
+    dead_stock_amount,
     ensure_utc,
     mark_posted,
     plan_allocations,
     platform_push_quantity,
+    receive_move,
     restock_bucket,
     sellable_qty,
+    ship_moves,
     should_push_zero,
     should_reserve_line,
     suggest_replenishment,
+    taking_delta,
+    taking_fits,
+    turnover_days,
 )
 from app.models.enums import AuditAction
 from app.models.inventory import (
@@ -55,6 +67,10 @@ from app.models.inventory import (
     InventoryHold,
     InventoryPushLog,
     PlatformSafetyStock,
+    StockTaking,
+    StockTakingLine,
+    StockTransfer,
+    StockTransferLine,
     Warehouse,
 )
 from app.models.listing import Listing
@@ -66,7 +82,10 @@ from app.repositories.inventory import (
     InventoryHoldRepository,
     InventoryPushLogRepository,
     InventoryRepository,
+    PhysicalRow,
     PlatformSafetyStockRepository,
+    StockTakingRepository,
+    StockTransferRepository,
     WarehouseRepository,
 )
 from app.repositories.listing import ListingRepository
@@ -81,6 +100,14 @@ from app.schemas.inventory import (
     ReplenishmentView,
     SafetyStockView,
     SafetyStockWrite,
+    StockTakingCounts,
+    StockTakingCreate,
+    StockTakingLineView,
+    StockTakingView,
+    TransferCreate,
+    TransferLineView,
+    TransferView,
+    TurnoverView,
     WarehousePatch,
     WarehouseView,
     WarehouseWrite,
@@ -175,6 +202,8 @@ class InventoryService:
         self.holds = InventoryHoldRepository(session)
         self.safety = PlatformSafetyStockRepository(session)
         self.push_logs = InventoryPushLogRepository(session)
+        self.transfers = StockTransferRepository(session)
+        self.takings = StockTakingRepository(session)
         self.skus = SkuRepository(session)
         self.listings = ListingRepository(session)
         self.shops = ShopRepository(session)
@@ -586,6 +615,284 @@ class InventoryService:
             )
         return views
 
+    async def list_transfers(self, *, limit: int, cursor: str | None) -> PageData[TransferView]:
+        rows = await self.transfers.list_cursor(limit=limit, before_id=_cursor_id(cursor))
+        views = [await self._transfer_view(row) for row in rows]
+        return build_cursor_page(views, limit)
+
+    async def create_transfer(self, payload: TransferCreate, *, tenant_id: int, actor_id: int) -> TransferView:
+        if payload.from_warehouse_id == payload.to_warehouse_id:
+            raise TransferWarehouseError()
+        await self.warehouses.get_or_404(payload.from_warehouse_id)
+        await self.warehouses.get_or_404(payload.to_warehouse_id)
+        for line in payload.lines:
+            await self.skus.get_or_404(line.sku_id)
+        row = StockTransfer(
+            tenant_id=tenant_id,
+            from_warehouse_id=payload.from_warehouse_id,
+            to_warehouse_id=payload.to_warehouse_id,
+            status="DRAFT",
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        await self.transfers.add(row)
+        for line in payload.lines:
+            await self.transfers.add_line(
+                StockTransferLine(
+                    tenant_id=tenant_id,
+                    transfer_id=row.id,
+                    sku_id=line.sku_id,
+                    quantity=line.quantity,
+                    created_by=actor_id,
+                    updated_by=actor_id,
+                )
+            )
+        return await self._transfer_view(row)
+
+    async def ship_transfer(self, transfer_id: int, *, tenant_id: int, actor_id: int) -> TransferView:
+        row = await self.transfers.get_or_404(transfer_id)
+        if row.status != "DRAFT":
+            raise TransferStateError()
+        lines = await self.transfers.lines_for(row.id)
+        if not await self.transfers.transition(row.id, "DRAFT", "IN_TRANSIT", actor_id):
+            raise TransferStateError()
+        await self.session.refresh(row)
+        for line in lines:
+            source_move, dest_move = ship_moves(line.quantity)
+            source = await self._ensure(line.sku_id, row.from_warehouse_id, tenant_id=tenant_id, actor_id=actor_id)
+            dest = await self._ensure(line.sku_id, row.to_warehouse_id, tenant_id=tenant_id, actor_id=actor_id)
+            await self._move_leg(source, source_move, quantity=line.quantity, ref_id=row.id, actor_id=actor_id)
+            await self._move_leg(dest, dest_move, quantity=line.quantity, ref_id=row.id, actor_id=actor_id)
+        await self._flush_enqueue()
+        return await self._transfer_view(row)
+
+    async def receive_transfer(self, transfer_id: int, *, tenant_id: int, actor_id: int) -> TransferView:
+        row = await self.transfers.get_or_404(transfer_id)
+        if row.status != "IN_TRANSIT":
+            raise TransferStateError()
+        lines = await self.transfers.lines_for(row.id)
+        if not await self.transfers.transition(row.id, "IN_TRANSIT", "RECEIVED", actor_id):
+            raise TransferStateError()
+        await self.session.refresh(row)
+        for line in lines:
+            dest = await self._ensure(line.sku_id, row.to_warehouse_id, tenant_id=tenant_id, actor_id=actor_id)
+            await self._move_leg(
+                dest,
+                receive_move(line.quantity),
+                quantity=line.quantity,
+                ref_id=row.id,
+                actor_id=actor_id,
+            )
+        await self._flush_enqueue()
+        return await self._transfer_view(row)
+
+    async def cancel_transfer(self, transfer_id: int, *, tenant_id: int, actor_id: int) -> TransferView:
+        row = await self.transfers.get_or_404(transfer_id)
+        lines = await self.transfers.lines_for(row.id)
+        if row.status == "DRAFT":
+            if not await self.transfers.transition(row.id, "DRAFT", "CANCELLED", actor_id):
+                raise TransferStateError()
+            await self.session.refresh(row)
+            return await self._transfer_view(row)
+        if row.status != "IN_TRANSIT":
+            raise TransferStateError()
+        if not await self.transfers.transition(row.id, "IN_TRANSIT", "CANCELLED", actor_id):
+            raise TransferStateError()
+        await self.session.refresh(row)
+        for line in lines:
+            dest_move, source_move = cancel_transit_moves(line.quantity)
+            dest = await self._ensure(line.sku_id, row.to_warehouse_id, tenant_id=tenant_id, actor_id=actor_id)
+            source = await self._ensure(line.sku_id, row.from_warehouse_id, tenant_id=tenant_id, actor_id=actor_id)
+            await self._move_leg(dest, dest_move, quantity=line.quantity, ref_id=row.id, actor_id=actor_id)
+            await self._move_leg(source, source_move, quantity=line.quantity, ref_id=row.id, actor_id=actor_id)
+        await self._flush_enqueue()
+        return await self._transfer_view(row)
+
+    async def list_takings(self, *, limit: int, cursor: str | None) -> PageData[StockTakingView]:
+        rows = await self.takings.list_cursor(limit=limit, before_id=_cursor_id(cursor))
+        views = [await self._taking_view(row) for row in rows]
+        return build_cursor_page(views, limit)
+
+    async def create_taking(self, payload: StockTakingCreate, *, tenant_id: int, actor_id: int) -> StockTakingView:
+        await self.warehouses.get_or_404(payload.warehouse_id)
+        balances = await self.inventories.list_by_warehouse(payload.warehouse_id)
+        if not balances:
+            raise ParamInvalidError("该仓库没有库存可盘点")
+        row = StockTaking(
+            tenant_id=tenant_id,
+            warehouse_id=payload.warehouse_id,
+            status="DRAFT",
+            diff_summary={},
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        await self.takings.add(row)
+        for balance in balances:
+            await self.takings.add_line(
+                StockTakingLine(
+                    tenant_id=tenant_id,
+                    taking_id=row.id,
+                    sku_id=balance.sku_id,
+                    book_qty=balance.available,
+                    counted_qty=None,
+                    created_by=actor_id,
+                    updated_by=actor_id,
+                )
+            )
+        return await self._taking_view(row)
+
+    async def record_counts(
+        self,
+        taking_id: int,
+        payload: StockTakingCounts,
+        *,
+        actor_id: int,
+    ) -> StockTakingView:
+        row = await self.takings.get_or_404(taking_id)
+        if row.status != "DRAFT":
+            raise StockTakingStateError()
+        for item in payload.lines:
+            line = await self.takings.line_for_sku(row.id, item.sku_id)
+            if line is None:
+                raise StockTakingStateError("盘点行不存在")
+            line.counted_qty = item.counted_qty
+            line.updated_by = actor_id
+        row.updated_by = actor_id
+        await self.session.flush()
+        return await self._taking_view(row)
+
+    async def post_taking(self, taking_id: int, *, tenant_id: int, actor_id: int) -> StockTakingView:
+        row = await self.takings.get_or_404(taking_id)
+        if row.status != "DRAFT":
+            raise StockTakingStateError()
+        lines = await self.takings.lines_for(row.id)
+        if any(line.counted_qty is None for line in lines):
+            raise StockTakingStateError("还有 SKU 没有录入实盘")
+        gain = 0
+        loss = 0
+        planned: list[tuple[int, int]] = []
+        for line in lines:
+            counted = line.counted_qty
+            if counted is None:
+                raise StockTakingStateError("还有 SKU 没有录入实盘")
+            delta = taking_delta(line.book_qty, counted)
+            inventory = await self.inventories.get_pair(line.sku_id, row.warehouse_id)
+            if inventory is None:
+                raise NotFoundError("库存不存在")
+            if not taking_fits(inventory.available, inventory.occupied, delta):
+                raise InventoryInsufficientError()
+            if delta > 0:
+                gain += delta
+            elif delta < 0:
+                loss += -delta
+            planned.append((line.sku_id, delta))
+        if not await self.takings.transition(row.id, "DRAFT", "POSTED", actor_id):
+            raise StockTakingStateError()
+        await self.session.refresh(row)
+        for sku_id, delta in planned:
+            if delta == 0:
+                continue
+            await self.adjust(
+                InventoryAdjust(
+                    sku_id=sku_id,
+                    warehouse_id=row.warehouse_id,
+                    kind="ADJUST",
+                    quantity=delta,
+                    ref_type="STOCK_TAKING",
+                    ref_id=row.id,
+                ),
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+            )
+        row.diff_summary = {"lines": len(lines), "gain_qty": gain, "loss_qty": loss}
+        row.updated_by = actor_id
+        await self.session.flush()
+        return await self._taking_view(row)
+
+    async def cancel_taking(self, taking_id: int, *, actor_id: int) -> StockTakingView:
+        row = await self.takings.get_or_404(taking_id)
+        if row.status != "DRAFT":
+            raise StockTakingStateError()
+        if not await self.takings.transition(row.id, "DRAFT", "CANCELLED", actor_id):
+            raise StockTakingStateError()
+        await self.session.refresh(row)
+        return await self._taking_view(row)
+
+    async def turnover(self, *, dimension: str, window_days: int, include_cost: bool) -> list[TurnoverView]:
+        if dimension not in ("sku", "warehouse", "platform"):
+            raise ParamInvalidError("周转维度不支持")
+        if window_days < 1:
+            raise ParamInvalidError("统计窗口至少 1 天")
+        since = datetime.now(UTC) - timedelta(days=window_days)
+        physical = await self.inventories.physical_rows()
+        if dimension == "warehouse":
+            shipped = await self.flows.shipped_since(since)
+            views: list[TurnoverView] = []
+            for row in physical:
+                view = _turnover_view(
+                    dimension="warehouse",
+                    sku_id=row.sku_id,
+                    sku_code=row.sku_code,
+                    on_hand=row.on_hand,
+                    sold=shipped.get((row.sku_id, row.warehouse_id), 0),
+                    window_days=window_days,
+                    unit_cost=row.purchase_price,
+                    currency=row.currency,
+                    include_cost=include_cost,
+                    warehouse_id=row.warehouse_id,
+                    warehouse_name=row.warehouse_name,
+                )
+                if view is not None:
+                    views.append(view)
+            return views
+        on_hand: dict[int, int] = defaultdict(int)
+        meta: dict[int, PhysicalRow] = {}
+        for row in physical:
+            on_hand[row.sku_id] += row.on_hand
+            meta[row.sku_id] = row
+        if dimension == "platform":
+            sales = await self.inventories.sales_since(since)
+            views = []
+            for sku_id, hand in on_hand.items():
+                row = meta[sku_id]
+                for platform in SUPPORTED_PLATFORMS:
+                    view = _turnover_view(
+                        dimension="platform",
+                        sku_id=sku_id,
+                        sku_code=row.sku_code,
+                        on_hand=hand,
+                        sold=sales.get((sku_id, platform), 0),
+                        window_days=window_days,
+                        unit_cost=row.purchase_price,
+                        currency=row.currency,
+                        include_cost=include_cost,
+                        platform_code=platform,
+                    )
+                    if view is not None:
+                        views.append(view)
+            return views
+        sales = await self.inventories.sales_since(since)
+        sold_by_sku: dict[int, int] = defaultdict(int)
+        for (sku_id, _platform), qty in sales.items():
+            sold_by_sku[sku_id] += qty
+        views = []
+        for sku_id, hand in on_hand.items():
+            row = meta[sku_id]
+            view = _turnover_view(
+                dimension="sku",
+                sku_id=sku_id,
+                sku_code=row.sku_code,
+                on_hand=hand,
+                sold=sold_by_sku.get(sku_id, 0),
+                window_days=window_days,
+                unit_cost=row.purchase_price,
+                currency=row.currency,
+                include_cost=include_cost,
+            )
+            if view is not None:
+                views.append(view)
+        return views
+
     async def list_push_logs(
         self,
         *,
@@ -968,6 +1275,69 @@ class InventoryService:
             return found
         return row
 
+    async def _move_leg(
+        self,
+        inventory: Inventory,
+        move: StockMove,
+        *,
+        quantity: int,
+        ref_id: int,
+        actor_id: int,
+    ) -> None:
+        await self._commit_change(
+            inventory,
+            flow_type=move.flow_type,
+            quantity=quantity,
+            before_name=move.bucket,
+            ref_type="TRANSFER",
+            ref_id=ref_id,
+            actor_id=actor_id,
+            available_delta=move.available_delta,
+            in_transit_delta=move.in_transit_delta,
+        )
+
+    async def _transfer_view(self, row: StockTransfer) -> TransferView:
+        source = await self.warehouses.get_or_404(row.from_warehouse_id)
+        dest = await self.warehouses.get_or_404(row.to_warehouse_id)
+        lines: list[TransferLineView] = []
+        for line in await self.transfers.lines_for(row.id):
+            sku = await self.skus.get_or_404(line.sku_id)
+            lines.append(TransferLineView(sku_id=line.sku_id, sku_code=sku.sku_code, quantity=line.quantity))
+        return TransferView(
+            id=row.id,
+            from_warehouse_id=row.from_warehouse_id,
+            to_warehouse_id=row.to_warehouse_id,
+            from_warehouse_name=source.name,
+            to_warehouse_name=dest.name,
+            status=row.status,
+            lines=lines,
+            created_at=row.created_at,
+        )
+
+    async def _taking_view(self, row: StockTaking) -> StockTakingView:
+        warehouse = await self.warehouses.get_or_404(row.warehouse_id)
+        lines: list[StockTakingLineView] = []
+        for line in await self.takings.lines_for(row.id):
+            sku = await self.skus.get_or_404(line.sku_id)
+            lines.append(
+                StockTakingLineView(
+                    sku_id=line.sku_id,
+                    sku_code=sku.sku_code,
+                    book_qty=line.book_qty,
+                    counted_qty=line.counted_qty,
+                )
+            )
+        summary = {str(key): int(value) for key, value in row.diff_summary.items()}
+        return StockTakingView(
+            id=row.id,
+            warehouse_id=row.warehouse_id,
+            warehouse_name=warehouse.name,
+            status=row.status,
+            diff_summary=summary,
+            lines=lines,
+            created_at=row.created_at,
+        )
+
     async def _view_for(self, row: Inventory) -> InventoryView:
         sku = await self.skus.get_or_404(row.sku_id)
         warehouse = await self.warehouses.get_or_404(row.warehouse_id)
@@ -1000,6 +1370,41 @@ class InventoryService:
             except Exception:
                 log.warning("inventory_push_enqueue_failed", sku_id=sku_id)
         self._touched.clear()
+
+
+def _turnover_view(
+    *,
+    dimension: Literal["sku", "warehouse", "platform"],
+    sku_id: int,
+    sku_code: str,
+    on_hand: int,
+    sold: int,
+    window_days: int,
+    unit_cost: Decimal | None,
+    currency: str | None,
+    include_cost: bool,
+    warehouse_id: int | None = None,
+    warehouse_name: str | None = None,
+    platform_code: str | None = None,
+) -> TurnoverView | None:
+    if on_hand == 0 and sold == 0:
+        return None
+    amount = dead_stock_amount(on_hand, sold, unit_cost) if include_cost else None
+    return TurnoverView(
+        dimension=dimension,
+        sku_id=sku_id,
+        sku_code=sku_code,
+        warehouse_id=warehouse_id,
+        warehouse_name=warehouse_name,
+        platform_code=platform_code,
+        on_hand=on_hand,
+        sold=sold,
+        window_days=window_days,
+        turnover_days=turnover_days(on_hand, sold, window_days),
+        dead=sold == 0 and on_hand > 0,
+        dead_stock_amount=amount,
+        currency=currency if amount is not None else None,
+    )
 
 
 def _adjust_deltas(kind: str, quantity: int) -> tuple[dict[str, int], str, str]:

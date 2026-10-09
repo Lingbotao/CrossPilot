@@ -38,6 +38,10 @@ from app.models.inventory import (
     InventoryHold,
     InventoryPushLog,
     PlatformSafetyStock,
+    StockTaking,
+    StockTakingLine,
+    StockTransfer,
+    StockTransferLine,
     Warehouse,
 )
 from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem, ListingDiff
@@ -108,6 +112,10 @@ __all__ = [
     "InventoryHold",
     "PlatformSafetyStock",
     "InventoryPushLog",
+    "StockTransfer",
+    "StockTransferLine",
+    "StockTaking",
+    "StockTakingLine",
     # 枚举
     "TenantPlan",
     "TenantStatus",

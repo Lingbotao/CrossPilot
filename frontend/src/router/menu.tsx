@@ -27,6 +27,8 @@ import { ExceptionsPage, OrdersPage, ToShipPage } from '@/pages/orders/OrdersPag
 import { ReturnsPage } from '@/pages/orders/ReturnsPage';
 import { OrderSettingsPage } from '@/pages/orders/SettingsPage';
 import { FlowsPage } from '@/pages/inventory/FlowsPage';
+import { StocktakingPage } from '@/pages/inventory/StocktakingPage';
+import { TransfersPage } from '@/pages/inventory/TransfersPage';
 import { OverviewPage } from '@/pages/inventory/OverviewPage';
 import { ReplenishmentPage } from '@/pages/inventory/ReplenishmentPage';
 import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
@@ -34,6 +36,7 @@ import { CategoryTemplatesPage } from '@/pages/products/CategoryTemplatesPage';
 import { ImagesPage } from '@/pages/products/ImagesPage';
 import { ListingsPage } from '@/pages/products/ListingsPage';
 import { LocalePage } from '@/pages/products/LocalePage';
+import { ProductDetailPage } from '@/pages/products/ProductDetailPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { PublishPage } from '@/pages/products/PublishPage';
 import { ShopsPage } from '@/pages/shops/ShopsPage';
@@ -52,6 +55,8 @@ export interface MenuItemConfig {
   delivered: boolean;
   /** 已交付页面组件；未交付项由路由统一渲染 PlaceholderPage。 */
   component?: ComponentType;
+  /** 路由仍注册，侧栏不展示。用于带参数的详情页。 */
+  hideInMenu?: boolean;
   children?: readonly MenuItemConfig[];
 }
 
@@ -155,6 +160,17 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         milestone: 'M3（Week 6–7）',
         delivered: true,
         component: ProductsPage,
+      },
+      {
+        key: 'products-detail',
+        path: '/products/:spuId',
+        label: zhCN.productPage.detail,
+        icon: null,
+        permission: Perm.PRODUCT_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        hideInMenu: true,
+        component: ProductDetailPage,
       },
       {
         key: 'products-images',
@@ -264,7 +280,8 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         icon: null,
         permission: Perm.INVENTORY_READ,
         milestone: 'M3（Week 6–7）',
-        delivered: false,
+        delivered: true,
+        component: TransfersPage,
       },
       {
         key: 'inventory-stocktaking',
@@ -273,7 +290,8 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         icon: null,
         permission: Perm.INVENTORY_READ,
         milestone: 'M3（Week 6–7）',
-        delivered: false,
+        delivered: true,
+        component: StocktakingPage,
       },
     ],
   },

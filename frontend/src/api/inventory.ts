@@ -11,6 +11,12 @@ import type {
   SafetyStockView,
   SafetyStockWrite,
   SpreadsheetFile,
+  StockTakingCountLine,
+  StockTakingView,
+  TransferCreate,
+  TransferView,
+  TurnoverDimension,
+  TurnoverView,
   WarehouseView,
   WarehouseWrite,
 } from './types';
@@ -57,4 +63,41 @@ export const inventoryApi = {
 
   replenishments: (windowDays: number) =>
     api.get<ReplenishmentView[]>('/inventory-replenishments', { params: { window_days: windowDays } }),
+
+  turnover: (dimension: TurnoverDimension, windowDays: number) =>
+    api.get<TurnoverView[]>('/inventories/turnover', { params: { dimension, window_days: windowDays } }),
+
+  listTransfers: (query: { cursor?: string; limit?: number }) =>
+    api.get<PageData<TransferView>>('/inventories/transfers', { params: query }),
+
+  createTransfer: (payload: TransferCreate) =>
+    api.post<TransferView>('/inventories/transfer', payload, { idempotent: true }),
+
+  shipTransfer: (transferId: string) =>
+    api.post<TransferView>(`/inventories/transfer/${encodeURIComponent(transferId)}/ship`, {}, { idempotent: true }),
+
+  receiveTransfer: (transferId: string) =>
+    api.post<TransferView>(`/inventories/transfer/${encodeURIComponent(transferId)}/receive`, {}, { idempotent: true }),
+
+  cancelTransfer: (transferId: string) =>
+    api.post<TransferView>(`/inventories/transfer/${encodeURIComponent(transferId)}/cancel`, {}, { idempotent: true }),
+
+  listTakings: (query: { cursor?: string; limit?: number }) =>
+    api.get<PageData<StockTakingView>>('/inventories/stock-takings', { params: query }),
+
+  createTaking: (warehouseId: string) =>
+    api.post<StockTakingView>('/inventories/stock-taking', { warehouse_id: warehouseId }, { idempotent: true }),
+
+  recordCounts: (takingId: string, lines: StockTakingCountLine[]) =>
+    api.patch<StockTakingView>(`/inventories/stock-taking/${encodeURIComponent(takingId)}`, { lines }, { idempotent: true }),
+
+  postTaking: (takingId: string) =>
+    api.post<StockTakingView>(`/inventories/stock-taking/${encodeURIComponent(takingId)}/post`, {}, { idempotent: true }),
+
+  cancelTaking: (takingId: string) =>
+    api.post<StockTakingView>(
+      `/inventories/stock-taking/${encodeURIComponent(takingId)}/cancel`,
+      {},
+      { idempotent: true },
+    ),
 };

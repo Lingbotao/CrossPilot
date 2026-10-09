@@ -2,6 +2,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Descriptions, Drawer, Form, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { downloadBase64 } from '@/api/orders';
@@ -152,6 +153,7 @@ function SkuFields({ index, canViewCost }: { index?: number; canViewCost: boolea
 }
 
 export function ProductsPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { canViewCost } = usePermission();
   const [filters, setFilters] = useState<SpuListQuery>({ limit: 20 });
@@ -379,6 +381,10 @@ export function ProductsPage() {
           dataSource={rows}
           pagination={false}
           locale={{ emptyText: copy.empty }}
+          onRow={(row) => ({
+            onClick: () => navigate(`/products/${row.id}`),
+            style: { cursor: 'pointer' },
+          })}
           columns={[
             { title: copy.searchTitle, dataIndex: 'title' },
             { title: copy.brand, dataIndex: 'brand', render: (value: string | null) => value || '—' },
@@ -392,9 +398,14 @@ export function ProductsPage() {
             {
               title: zhCN.common.actions,
               render: (_, row) => (
-                <Button type="link" onClick={() => setOpenId(row.id)}>
-                  {copy.detail}
-                </Button>
+                <Space onClick={(event) => event.stopPropagation()}>
+                  <Button type="link" onClick={() => navigate(`/products/${row.id}`)}>
+                    {copy.detail}
+                  </Button>
+                  <Button type="link" onClick={() => setOpenId(row.id)}>
+                    {copy.edit}
+                  </Button>
+                </Space>
               ),
             },
           ]}

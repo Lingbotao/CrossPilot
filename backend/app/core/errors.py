@@ -9,7 +9,7 @@
 | 30xxx | 平台与同步  | 30001 平台不支持，30002 授权失败，30003 平台限流  |
 | 40xxx | 商品        | 40001 SKU 编码重复，40007 批次超过 500，40009 导入行错误 |
 | 50xxx | 订单        | 50001 订单不存在，50002 状态不允许该操作          |
-| 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60004 仓库编码冲突 |
+| 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60004 仓库编码冲突，60005 调拨仓库不合法 |
 | 70xxx | 财务        | 70001 汇率缺失，70002 对账不平                    |
 | 80xxx | 合规        | 80001 缺失 HS 编码，80002 认证已过期              |
 """
@@ -86,6 +86,9 @@ class ErrorCode(IntEnum):
     INVENTORY_SYNC_FAILED = 60002
     INVENTORY_CONFLICT = 60003
     WAREHOUSE_CODE_DUPLICATED = 60004
+    TRANSFER_WAREHOUSE_INVALID = 60005
+    TRANSFER_STATE_INVALID = 60006
+    STOCK_TAKING_STATE_INVALID = 60007
 
     # ---- 70xxx 财务 ----
     EXCHANGE_RATE_MISSING = 70001
@@ -152,6 +155,9 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.INVENTORY_SYNC_FAILED: 502,
     ErrorCode.INVENTORY_CONFLICT: 409,
     ErrorCode.WAREHOUSE_CODE_DUPLICATED: 409,
+    ErrorCode.TRANSFER_WAREHOUSE_INVALID: 422,
+    ErrorCode.TRANSFER_STATE_INVALID: 409,
+    ErrorCode.STOCK_TAKING_STATE_INVALID: 409,
     ErrorCode.EXCHANGE_RATE_MISSING: 422,
     ErrorCode.SETTLEMENT_MISMATCH: 409,
     ErrorCode.LANDED_COST_PARAM_MISSING: 422,
@@ -267,6 +273,21 @@ class InventoryConflictError(AppError):
     message = "库存正在被其他操作更新，请重试"
 
 
+class TransferWarehouseError(AppError):
+    code = ErrorCode.TRANSFER_WAREHOUSE_INVALID
+    message = "调出仓和调入仓不能相同"
+
+
+class TransferStateError(AppError):
+    code = ErrorCode.TRANSFER_STATE_INVALID
+    message = "调拨单当前状态不能执行该操作"
+
+
+class StockTakingStateError(AppError):
+    code = ErrorCode.STOCK_TAKING_STATE_INVALID
+    message = "盘点单当前状态不能执行该操作"
+
+
 class ExchangeRateMissingError(AppError):
     code = ErrorCode.EXCHANGE_RATE_MISSING
     message = "汇率缺失"
@@ -288,6 +309,9 @@ __all__ = [
     "HSCodeMissingError",
     "InventoryConflictError",
     "InventoryInsufficientError",
+    "StockTakingStateError",
+    "TransferStateError",
+    "TransferWarehouseError",
     "NotFoundError",
     "ParamInvalidError",
     "PermissionDeniedError",

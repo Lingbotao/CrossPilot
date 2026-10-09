@@ -8,7 +8,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
-from app.models.inventory import FLOW_TYPES, HOLD_STATUSES, PUSH_STATUSES, WAREHOUSE_TYPES
+from app.models.inventory import (
+    FLOW_TYPES,
+    HOLD_STATUSES,
+    PUSH_STATUSES,
+    TAKING_STATUSES,
+    TRANSFER_STATUSES,
+    WAREHOUSE_TYPES,
+)
 from app.schemas.listing import parse_id
 
 AdjustKind = Literal["INBOUND", "OUTBOUND", "TO_DEFECTIVE", "ADJUST"]
@@ -312,6 +319,172 @@ class ReplenishmentView(BaseModel):
         return f"{value:.4f}"
 
 
+class TransferLineWrite(BaseModel):
+    sku_id: int
+    quantity: int = Field(ge=1, le=1_000_000)
+
+    @field_validator("sku_id", mode="before")
+    @classmethod
+    def _sku(cls, value: object) -> int:
+        return parse_id(value)
+
+
+class TransferCreate(BaseModel):
+    from_warehouse_id: int
+    to_warehouse_id: int
+    lines: list[TransferLineWrite] = Field(min_length=1, max_length=100)
+
+    @field_validator("from_warehouse_id", "to_warehouse_id", mode="before")
+    @classmethod
+    def _warehouses(cls, value: object) -> int:
+        return parse_id(value)
+
+    @field_validator("lines")
+    @classmethod
+    def _unique_skus(cls, value: list[TransferLineWrite]) -> list[TransferLineWrite]:
+        seen: set[int] = set()
+        for line in value:
+            if line.sku_id in seen:
+                raise ValueError("同一张调拨单里 SKU 不能重复")
+            seen.add(line.sku_id)
+        return value
+
+
+class TransferLineView(BaseModel):
+    sku_id: int
+    sku_code: str
+    quantity: int
+
+    @field_serializer("sku_id")
+    def _sku(self, value: int) -> str:
+        return str(value)
+
+
+class TransferView(BaseModel):
+    id: int
+    from_warehouse_id: int
+    to_warehouse_id: int
+    from_warehouse_name: str
+    to_warehouse_name: str
+    status: str
+    lines: list[TransferLineView]
+    created_at: datetime
+
+    @field_serializer("id", "from_warehouse_id", "to_warehouse_id")
+    def _ids(self, value: int) -> str:
+        return str(value)
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, value: str) -> str:
+        if value not in TRANSFER_STATUSES:
+            raise ValueError("调拨状态不支持")
+        return value
+
+
+class StockTakingCreate(BaseModel):
+    warehouse_id: int
+
+    @field_validator("warehouse_id", mode="before")
+    @classmethod
+    def _warehouse(cls, value: object) -> int:
+        return parse_id(value)
+
+
+class StockTakingCountLine(BaseModel):
+    sku_id: int
+    counted_qty: int = Field(ge=0, le=1_000_000)
+
+    @field_validator("sku_id", mode="before")
+    @classmethod
+    def _sku(cls, value: object) -> int:
+        return parse_id(value)
+
+
+class StockTakingCounts(BaseModel):
+    lines: list[StockTakingCountLine] = Field(min_length=1, max_length=500)
+
+    @field_validator("lines")
+    @classmethod
+    def _unique_skus(cls, value: list[StockTakingCountLine]) -> list[StockTakingCountLine]:
+        seen: set[int] = set()
+        for line in value:
+            if line.sku_id in seen:
+                raise ValueError("同一张盘点单里 SKU 不能重复")
+            seen.add(line.sku_id)
+        return value
+
+
+class StockTakingLineView(BaseModel):
+    sku_id: int
+    sku_code: str
+    book_qty: int
+    counted_qty: int | None
+
+    @field_serializer("sku_id")
+    def _sku(self, value: int) -> str:
+        return str(value)
+
+
+class StockTakingView(BaseModel):
+    id: int
+    warehouse_id: int
+    warehouse_name: str
+    status: str
+    diff_summary: dict[str, int]
+    lines: list[StockTakingLineView]
+    created_at: datetime
+
+    @field_serializer("id", "warehouse_id")
+    def _ids(self, value: int) -> str:
+        return str(value)
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, value: str) -> str:
+        if value not in TAKING_STATUSES:
+            raise ValueError("盘点状态不支持")
+        return value
+
+
+class TurnoverView(BaseModel):
+    dimension: Literal["sku", "warehouse", "platform"]
+    sku_id: int
+    sku_code: str
+    warehouse_id: int | None = None
+    warehouse_name: str | None = None
+    platform_code: str | None = None
+    on_hand: int
+    sold: int
+    window_days: int
+    turnover_days: Decimal | None
+    dead: bool
+    dead_stock_amount: Decimal | None = None
+    currency: str | None = None
+
+    @field_serializer("sku_id")
+    def _sku(self, value: int) -> str:
+        return str(value)
+
+    @field_serializer("warehouse_id")
+    def _warehouse(self, value: int | None) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    @field_serializer("turnover_days")
+    def _days(self, value: Decimal | None) -> str | None:
+        if value is None:
+            return None
+        return f"{value:.2f}"
+
+    @field_serializer("dead_stock_amount")
+    def _amount(self, value: Decimal | None) -> str | None:
+        if value is None:
+            return None
+        return f"{value:.6f}"
+
+
 class HoldView(BaseModel):
     order_item_id: int
     sku_id: int
@@ -342,6 +515,14 @@ __all__ = [
     "ReplenishmentView",
     "SafetyStockView",
     "SafetyStockWrite",
+    "StockTakingCounts",
+    "StockTakingCreate",
+    "StockTakingLineView",
+    "StockTakingView",
+    "TransferCreate",
+    "TransferLineView",
+    "TransferView",
+    "TurnoverView",
     "WarehousePatch",
     "WarehouseView",
     "WarehouseWrite",

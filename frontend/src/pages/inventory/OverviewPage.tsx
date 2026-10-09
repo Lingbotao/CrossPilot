@@ -4,9 +4,10 @@ import { useState } from 'react';
 
 import { ApiError } from '@/api/client';
 import { inventoryApi } from '@/api/inventory';
-import { Perm, type InventoryAdjustKind, type InventoryPushStatus, type InventoryView } from '@/api/types';
+import { Perm, type InventoryAdjustKind, type InventoryPushStatus, type InventoryView, type TurnoverDimension, type TurnoverView } from '@/api/types';
 import { feedback } from '@/app/feedback';
-import { PermissionGuard } from '@/components/PermissionGuard';
+import { MoneyText } from '@/components/MoneyText';
+import { CostGuard, PermissionGuard } from '@/components/PermissionGuard';
 import zhCN from '@/i18n/zh-CN';
 import { formatDateTime } from '@/utils/format';
 
@@ -39,6 +40,8 @@ export function OverviewPage() {
   const client = useQueryClient();
   const [skuId, setSkuId] = useState('');
   const [kind, setKind] = useState<InventoryAdjustKind>('INBOUND');
+  const [dimension, setDimension] = useState<TurnoverDimension>('sku');
+  const [windowDays, setWindowDays] = useState(30);
   const stocks = useQuery({
     queryKey: ['inventories'],
     queryFn: () => inventoryApi.list({ limit: 100 }),
@@ -50,6 +53,10 @@ export function OverviewPage() {
   const logs = useQuery({
     queryKey: ['inventory-push-logs'],
     queryFn: () => inventoryApi.listPushLogs({ limit: 50 }),
+  });
+  const turnover = useQuery({
+    queryKey: ['inventory-turnover', dimension, windowDays],
+    queryFn: () => inventoryApi.turnover(dimension, windowDays),
   });
 
   const adjust = useMutation({
@@ -150,6 +157,57 @@ export function OverviewPage() {
             {
               title: copy.pushStatus,
               render: (_, row) => (laggedSkus.has(row.sku_id) ? <Tag color="orange">{copy.lagged}</Tag> : '—'),
+            },
+          ]}
+        />
+      </Card>
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>
+          {copy.turnoverTitle}
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">{copy.turnoverDescription}</Typography.Paragraph>
+        <Space style={{ marginBottom: 16 }}>
+          <Select<TurnoverDimension>
+            value={dimension}
+            style={{ width: 140 }}
+            onChange={setDimension}
+            options={[
+              { value: 'sku', label: copy.dimensionSku },
+              { value: 'warehouse', label: copy.dimensionWarehouse },
+              { value: 'platform', label: copy.dimensionPlatform },
+            ]}
+          />
+          <InputNumber min={1} max={365} value={windowDays} onChange={(value) => setWindowDays(value ?? 30)} />
+        </Space>
+        {turnover.isError ? <Alert type="error" message={messageOf(turnover.error)} /> : null}
+        <Table<TurnoverView>
+          rowKey={(row) => `${row.dimension}-${row.sku_id}-${row.warehouse_id ?? ''}-${row.platform_code ?? ''}`}
+          loading={turnover.isLoading}
+          dataSource={turnover.data ?? []}
+          pagination={false}
+          columns={[
+            { title: copy.sku, dataIndex: 'sku_code' },
+            { title: copy.warehouse, dataIndex: 'warehouse_name', render: (value: string | null) => value || '—' },
+            { title: copy.platform, dataIndex: 'platform_code', render: (value: string | null) => value || '—' },
+            { title: copy.onHand, dataIndex: 'on_hand' },
+            { title: copy.sold, dataIndex: 'sold' },
+            { title: copy.turnoverDays, dataIndex: 'turnover_days', render: (value: string | null) => value ?? '—' },
+            {
+              title: copy.dead,
+              dataIndex: 'dead',
+              render: (value: boolean) => (value ? <Tag color="orange">{copy.dead}</Tag> : '—'),
+            },
+            {
+              title: copy.deadAmount,
+              render: (_, row) => (
+                <CostGuard>
+                  {row.dead_stock_amount ? (
+                    <MoneyText value={row.dead_stock_amount} currency={row.currency ?? 'CNY'} decimals={4} />
+                  ) : (
+                    '—'
+                  )}
+                </CostGuard>
+              ),
             },
           ]}
         />

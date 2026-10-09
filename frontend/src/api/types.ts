@@ -95,6 +95,9 @@ export const ErrorCode = {
   INVENTORY_SYNC_FAILED: 60002,
   INVENTORY_CONFLICT: 60003,
   WAREHOUSE_CODE_DUPLICATED: 60004,
+  TRANSFER_WAREHOUSE_INVALID: 60005,
+  TRANSFER_STATE_INVALID: 60006,
+  STOCK_TAKING_STATE_INVALID: 60007,
 
   // 70xxx 财务
   EXCHANGE_RATE_MISSING: 70001,
@@ -1267,4 +1270,74 @@ export interface ReplenishmentView {
   daily_sales: string;
   suggested_qty: number;
   order_on: string | null;
+}
+
+export type TransferStatus = 'DRAFT' | 'IN_TRANSIT' | 'RECEIVED' | 'CANCELLED';
+export type StockTakingStatus = 'DRAFT' | 'POSTED' | 'CANCELLED';
+export type TurnoverDimension = 'sku' | 'warehouse' | 'platform';
+
+export interface TransferLineView {
+  sku_id: string;
+  sku_code: string;
+  quantity: number;
+}
+
+export interface TransferView {
+  id: string;
+  from_warehouse_id: string;
+  to_warehouse_id: string;
+  from_warehouse_name: string;
+  to_warehouse_name: string;
+  status: TransferStatus;
+  lines: TransferLineView[];
+  created_at: string;
+}
+
+export interface TransferLineWrite {
+  sku_id: string;
+  quantity: number;
+}
+
+export interface TransferCreate {
+  from_warehouse_id: string;
+  to_warehouse_id: string;
+  lines: TransferLineWrite[];
+}
+
+export interface StockTakingLineView {
+  sku_id: string;
+  sku_code: string;
+  book_qty: number;
+  counted_qty: number | null;
+}
+
+export interface StockTakingView {
+  id: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  status: StockTakingStatus;
+  diff_summary: { lines?: number; gain_qty?: number; loss_qty?: number };
+  lines: StockTakingLineView[];
+  created_at: string;
+}
+
+export interface StockTakingCountLine {
+  sku_id: string;
+  counted_qty: number;
+}
+
+export interface TurnoverView {
+  dimension: TurnoverDimension;
+  sku_id: string;
+  sku_code: string;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  platform_code: string | null;
+  on_hand: number;
+  sold: number;
+  window_days: number;
+  turnover_days: string | null;
+  dead: boolean;
+  dead_stock_amount: string | null;
+  currency: string | null;
 }

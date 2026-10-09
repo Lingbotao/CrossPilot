@@ -132,6 +132,9 @@ function buildSiderItems(
 ): MenuProps['items'] {
   const built: NonNullable<MenuProps['items']> = [];
   for (const item of items) {
+    if (item.hideInMenu) {
+      continue;
+    }
     if (item.children && item.children.length > 0) {
       const children = buildSiderItems(item.children, can, navigate);
       if (!children || children.length === 0) {

@@ -858,7 +858,10 @@ class TestListingMappingIsolation:
                         ),
                         {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": f"MAP-{sku_id}"},
                     )
-                for map_id, tenant_id, code in ((map_a, TENANT_A, "tee-a"), (map_b, TENANT_B, "tee-b")):
+                for map_id, tenant_id, code in (
+                    (map_a, TENANT_A, f"tee-a-{map_a}"),
+                    (map_b, TENANT_B, f"tee-b-{map_b}"),
+                ):
                     await session.execute(
                         text(
                             "INSERT INTO category_mapping ("
@@ -1229,6 +1232,11 @@ class TestInventoryIsolation:
         hold_a, hold_b = base + 14, base + 15
         safety_a, safety_b = base + 16, base + 17
         push_a, push_b = base + 18, base + 19
+        warehouse2_a, warehouse2_b = base + 40, base + 41
+        transfer_a, transfer_b = base + 42, base + 43
+        transfer_line_a, transfer_line_b = base + 44, base + 45
+        taking_a, taking_b = base + 46, base + 47
+        taking_line_a, taking_line_b = base + 48, base + 49
 
         async def _seed() -> None:
             engine = create_async_engine(settings.database_migration_url, poolclass=None)
@@ -1335,6 +1343,59 @@ class TestInventoryIsolation:
                         ),
                         {"id": safety_id, "tid": tenant_id, "sku": sku_id},
                     )
+                for warehouse_id, tenant_id in ((warehouse2_a, TENANT_A), (warehouse2_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO warehouse (id, tenant_id, name, warehouse_type, country) "
+                            "VALUES (:id, :tid, '次仓', 'OVERSEAS', 'SG')"
+                        ),
+                        {"id": warehouse_id, "tid": tenant_id},
+                    )
+                for transfer_id, tenant_id, from_id, to_id in (
+                    (transfer_a, TENANT_A, warehouse_a, warehouse2_a),
+                    (transfer_b, TENANT_B, warehouse_b, warehouse2_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO stock_transfer ("
+                            "id, tenant_id, from_warehouse_id, to_warehouse_id, status"
+                            ") VALUES (:id, :tid, :src, :dst, 'DRAFT')"
+                        ),
+                        {"id": transfer_id, "tid": tenant_id, "src": from_id, "dst": to_id},
+                    )
+                for line_id, tenant_id, transfer_id, sku_id in (
+                    (transfer_line_a, TENANT_A, transfer_a, sku_a),
+                    (transfer_line_b, TENANT_B, transfer_b, sku_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO stock_transfer_line (id, tenant_id, transfer_id, sku_id, quantity) "
+                            "VALUES (:id, :tid, :transfer, :sku, 1)"
+                        ),
+                        {"id": line_id, "tid": tenant_id, "transfer": transfer_id, "sku": sku_id},
+                    )
+                for taking_id, tenant_id, warehouse_id in (
+                    (taking_a, TENANT_A, warehouse_a),
+                    (taking_b, TENANT_B, warehouse_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO stock_taking (id, tenant_id, warehouse_id, status) "
+                            "VALUES (:id, :tid, :warehouse, 'DRAFT')"
+                        ),
+                        {"id": taking_id, "tid": tenant_id, "warehouse": warehouse_id},
+                    )
+                for line_id, tenant_id, taking_id, sku_id in (
+                    (taking_line_a, TENANT_A, taking_a, sku_a),
+                    (taking_line_b, TENANT_B, taking_b, sku_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO stock_taking_line (id, tenant_id, taking_id, sku_id, book_qty) "
+                            "VALUES (:id, :tid, :taking, :sku, 3)"
+                        ),
+                        {"id": line_id, "tid": tenant_id, "taking": taking_id, "sku": sku_id},
+                    )
                 for push_id, tenant_id, shop_id, sku_id in (
                     (push_a, TENANT_A, shop_a, sku_a),
                     (push_b, TENANT_B, shop_b, sku_b),
@@ -1432,6 +1493,10 @@ class TestInventoryIsolation:
             ("SELECT id FROM inventory_hold WHERE id IN (:a, :b)", hold_a, hold_b),
             ("SELECT id FROM platform_safety_stock WHERE id IN (:a, :b)", safety_a, safety_b),
             ("SELECT id FROM inventory_push_log WHERE id IN (:a, :b)", push_a, push_b),
+            ("SELECT id FROM stock_transfer WHERE id IN (:a, :b)", transfer_a, transfer_b),
+            ("SELECT id FROM stock_transfer_line WHERE id IN (:a, :b)", transfer_line_a, transfer_line_b),
+            ("SELECT id FROM stock_taking WHERE id IN (:a, :b)", taking_a, taking_b),
+            ("SELECT id FROM stock_taking_line WHERE id IN (:a, :b)", taking_line_a, taking_line_b),
         )
         for sql, left, right in pairs:
             assert _run(_visible(sql, TENANT_A, left, right)) == {left}

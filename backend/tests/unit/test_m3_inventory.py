@@ -3,25 +3,34 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from app.adapters.quotas import quota_for
 from app.engines.inventory import (
     BinView,
     StockLevel,
     StockOutcome,
+    apply_bin,
+    cancel_transit_moves,
     chunk_updates,
+    dead_stock_amount,
     mark_posted,
     plan_allocations,
     platform_push_quantity,
+    receive_move,
     restock_bucket,
     sellable_qty,
+    ship_moves,
     should_push_zero,
     should_reserve_line,
     simulate_parallel_reserves,
     suggest_replenishment,
+    taking_delta,
+    taking_fits,
     try_release,
     try_reserve,
     try_ship,
+    turnover_days,
 )
 from app.engines.order_desk import RestockStatus
 from app.models import TENANT_SCOPED_TABLES
@@ -36,6 +45,10 @@ def test_inventory_tables_are_tenant_scoped() -> None:
         "inventory_hold",
         "platform_safety_stock",
         "inventory_push_log",
+        "stock_transfer",
+        "stock_transfer_line",
+        "stock_taking",
+        "stock_taking_line",
     ):
         assert name in TENANT_SCOPED_TABLES
 
@@ -148,3 +161,69 @@ def test_replenishment_uses_lead_time_cover_and_safety() -> None:
     )
     assert suggestion.suggested_qty == 12
     assert suggestion.order_on == today
+
+
+def test_transfer_ship_keeps_destination_sellable_until_receive() -> None:
+    source_move, dest_move = ship_moves(3)
+    status, source_available, source_occupied, _source_transit = apply_bin(10, 2, 0, source_move)
+    assert status == "applied"
+    assert source_available == 7
+    assert source_occupied == 2
+    before = sellable_qty(4, 1, 2)
+    status, dest_available, dest_occupied, dest_transit = apply_bin(4, 1, 0, dest_move)
+    assert status == "applied"
+    assert dest_transit == 3
+    assert sellable_qty(dest_available, dest_occupied, 2) == before
+    status, dest_available, dest_occupied, dest_transit = apply_bin(
+        dest_available,
+        dest_occupied,
+        dest_transit,
+        receive_move(3),
+    )
+    assert status == "applied"
+    assert dest_transit == 0
+    assert dest_available == 7
+
+
+def test_transfer_cancel_returns_in_transit_to_source() -> None:
+    source_move, dest_move = ship_moves(3)
+    _, source_available, source_occupied, source_transit = apply_bin(10, 0, 0, source_move)
+    _, dest_available, dest_occupied, dest_transit = apply_bin(0, 0, 0, dest_move)
+    dest_move_back, source_move_back = cancel_transit_moves(3)
+    status, dest_available, _, dest_transit = apply_bin(dest_available, dest_occupied, dest_transit, dest_move_back)
+    assert status == "applied"
+    assert dest_transit == 0
+    status, source_available, _, source_transit = apply_bin(
+        source_available,
+        source_occupied,
+        source_transit,
+        source_move_back,
+    )
+    assert status == "applied"
+    assert source_available == 10
+    assert source_transit == 0
+
+
+def test_transfer_refuses_to_drive_stock_negative() -> None:
+    source_move, _dest_move = ship_moves(1)
+    status, available, occupied, transit = apply_bin(2, 2, 0, source_move)
+    assert status == "insufficient"
+    assert available == 2
+    assert occupied == 2
+    assert transit == 0
+
+
+def test_stocktake_adjustment_matches_the_count_gap() -> None:
+    delta = taking_delta(10, 7)
+    assert delta == -3
+    assert taking_fits(10, 2, delta)
+    assert taking_fits(10, 9, delta) is False
+    assert taking_delta(4, 9) == 5
+
+
+def test_turnover_days_and_dead_stock_amount() -> None:
+    assert turnover_days(30, 15, 30) == Decimal("60.00")
+    assert turnover_days(10, 0, 30) is None
+    assert dead_stock_amount(10, 0, Decimal("1.25")) == Decimal("12.500000")
+    assert dead_stock_amount(10, 1, Decimal("1.25")) is None
+    assert dead_stock_amount(0, 0, Decimal("1.25")) is None

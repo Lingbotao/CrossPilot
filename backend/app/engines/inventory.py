@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import TypeGuard, TypeVar
 
@@ -269,6 +269,93 @@ def simulate_parallel_reserves(available: int, attempts: int, *, quantity: int =
     return successes, level
 
 
+@dataclass(frozen=True, slots=True)
+class StockMove:
+    """一笔仓内变动。``bucket`` 是流水前后数量所在的字段。"""
+
+    available_delta: int
+    in_transit_delta: int
+    flow_type: str
+    bucket: str
+
+
+def _positive(quantity: int) -> None:
+    if quantity <= 0:
+        raise ValueError("数量必须大于 0")
+
+
+def ship_moves(quantity: int) -> tuple[StockMove, StockMove]:
+    """发出：源仓可用减少，目的仓在途增加。返回 (源仓, 目的仓)。"""
+
+    _positive(quantity)
+    return (
+        StockMove(-quantity, 0, "TRANSFER_OUT", "available"),
+        StockMove(0, quantity, "TRANSFER_IN", "in_transit"),
+    )
+
+
+def receive_move(quantity: int) -> StockMove:
+    """收货：目的仓在途转入可用。"""
+
+    _positive(quantity)
+    return StockMove(quantity, -quantity, "TRANSFER_IN", "available")
+
+
+def cancel_transit_moves(quantity: int) -> tuple[StockMove, StockMove]:
+    """在途取消：目的仓退出在途，源仓加回可用。返回 (目的仓, 源仓)。"""
+
+    _positive(quantity)
+    return (
+        StockMove(0, -quantity, "TRANSFER_IN", "in_transit"),
+        StockMove(quantity, 0, "TRANSFER_OUT", "available"),
+    )
+
+
+def apply_bin(
+    available: int,
+    occupied: int,
+    in_transit: int,
+    move: StockMove,
+) -> tuple[str, int, int, int]:
+    """套用一笔变动。不够扣或预占超过实物时停在原数。"""
+
+    new_available = available + move.available_delta
+    new_transit = in_transit + move.in_transit_delta
+    if new_available < 0 or new_transit < 0 or new_available < occupied:
+        return "insufficient", available, occupied, in_transit
+    return "applied", new_available, occupied, new_transit
+
+
+def taking_delta(book_qty: int, counted_qty: int) -> int:
+    """实盘相对冻结账面的差额。正数盘盈，负数盘亏。"""
+
+    return counted_qty - book_qty
+
+
+def taking_fits(available: int, occupied: int, delta: int) -> bool:
+    """调整后仍须 available >= 0 且 available >= occupied。"""
+
+    new_available = available + delta
+    return new_available >= 0 and new_available >= occupied
+
+
+def turnover_days(on_hand: int, sold: int, window_days: int) -> Decimal | None:
+    """实物 / (窗口销量 / 窗口天数)。销量为 0 时没有周转天数。"""
+
+    if sold <= 0 or window_days <= 0:
+        return None
+    daily = Decimal(sold) / Decimal(window_days)
+    return (Decimal(on_hand) / daily).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def dead_stock_amount(on_hand: int, sold: int, unit_cost: Decimal | None) -> Decimal | None:
+    """窗口内没有销量且仍有实物时，金额 = 实物 × 采购价。"""
+
+    if sold != 0 or on_hand <= 0 or unit_cost is None:
+        return None
+    return (Decimal(on_hand) * unit_cost).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+
+
 def ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
@@ -280,22 +367,31 @@ __all__ = [
     "BinView",
     "Replenishment",
     "StockLevel",
+    "StockMove",
     "StockOutcome",
+    "apply_bin",
+    "cancel_transit_moves",
     "chunk_updates",
+    "dead_stock_amount",
     "ensure_utc",
     "free_qty",
     "mark_posted",
     "plan_allocations",
     "platform_push_quantity",
+    "receive_move",
     "restock_bucket",
     "sellable_qty",
+    "ship_moves",
     "should_push_zero",
     "should_reserve_line",
     "simulate_parallel_reserves",
     "suggest_replenishment",
+    "taking_delta",
+    "taking_fits",
     "try_inbound",
     "try_outbound",
     "try_release",
     "try_reserve",
     "try_ship",
+    "turnover_days",
 ]

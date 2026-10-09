@@ -1,8 +1,8 @@
-"""库存与仓储（M3-06 / M3-07）。
+"""库存与仓储（M3-06 / M3-07 / M3-08）。
 
 ``warehouse`` 和平台水位是主数据，可软删除。
-``inventory`` 是余额，``inventory_flow`` / ``inventory_hold`` / ``inventory_push_log`` 是流水，不软删除。
-可售口径在数据库视图 ``v_sellable_inventory``，不在这张余额表上再减一次平台水位。
+``inventory`` 是余额。流水、预占、回传日志、调拨单和盘点单不软删除。
+可售口径在数据库视图 ``v_sellable_inventory``，在途不计入可售。
 """
 
 from __future__ import annotations
@@ -41,7 +41,13 @@ FLOW_TYPES: tuple[str, ...] = (
     "SHIP",
     "RETURN_IN",
     "ADJUST",
+    "TRANSFER_OUT",
+    "TRANSFER_IN",
 )
+TRANSFER_STATUSES: tuple[str, ...] = ("DRAFT", "IN_TRANSIT", "RECEIVED", "CANCELLED")
+TRANSFER_STATUS_SQL = ", ".join(f"'{item}'" for item in TRANSFER_STATUSES)
+TAKING_STATUSES: tuple[str, ...] = ("DRAFT", "POSTED", "CANCELLED")
+TAKING_STATUS_SQL = ", ".join(f"'{item}'" for item in TAKING_STATUSES)
 FLOW_TYPE_SQL = ", ".join(f"'{item}'" for item in FLOW_TYPES)
 HOLD_STATUSES: tuple[str, ...] = ("OPEN", "RELEASED", "SHIPPED", "SHORT")
 HOLD_STATUS_SQL = ", ".join(f"'{item}'" for item in HOLD_STATUSES)
@@ -215,16 +221,106 @@ class InventoryPushLog(Base, PKMixin, TenantMixin, AuditMixin):
     )
 
 
+class StockTransfer(Base, PKMixin, TenantMixin, AuditMixin):
+    """仓库间调拨。发出后目的仓记在途，收货后才转入可用。"""
+
+    __tablename__ = "stock_transfer"
+
+    from_warehouse_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    to_warehouse_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["from_warehouse_id"],
+            ["warehouse.id"],
+            name="fk_stock_transfer_from_warehouse_id_warehouse",
+        ),
+        ForeignKeyConstraint(
+            ["to_warehouse_id"],
+            ["warehouse.id"],
+            name="fk_stock_transfer_to_warehouse_id_warehouse",
+        ),
+        CheckConstraint(f"status IN ({TRANSFER_STATUS_SQL})", name="status"),
+        CheckConstraint("from_warehouse_id <> to_warehouse_id", name="warehouses"),
+        Index("ix_stock_transfer_tenant_id_status", "tenant_id", "status"),
+    )
+
+
+class StockTransferLine(Base, PKMixin, TenantMixin, AuditMixin):
+    """调拨明细。一单同一 SKU 只出现一次。"""
+
+    __tablename__ = "stock_transfer_line"
+
+    transfer_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sku_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["transfer_id"],
+            ["stock_transfer.id"],
+            name="fk_stock_transfer_line_transfer_id_stock_transfer",
+        ),
+        ForeignKeyConstraint(["sku_id"], ["sku.id"], name="fk_stock_transfer_line_sku_id_sku"),
+        CheckConstraint("quantity > 0", name="quantity"),
+        Index("uq_stock_transfer_line_tenant_transfer_sku", "tenant_id", "transfer_id", "sku_id", unique=True),
+        Index("ix_stock_transfer_line_tenant_id_transfer_id", "tenant_id", "transfer_id"),
+    )
+
+
+class StockTaking(Base, PKMixin, TenantMixin, AuditMixin):
+    """盘点单。过账后按冻结账面与实盘的差额生成调整流水。"""
+
+    __tablename__ = "stock_taking"
+
+    warehouse_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    diff_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+
+    __table_args__ = (
+        ForeignKeyConstraint(["warehouse_id"], ["warehouse.id"], name="fk_stock_taking_warehouse_id_warehouse"),
+        CheckConstraint(f"status IN ({TAKING_STATUS_SQL})", name="status"),
+        CheckConstraint("jsonb_typeof(diff_summary) = 'object'", name="diff_summary"),
+        Index("ix_stock_taking_tenant_id_warehouse_id", "tenant_id", "warehouse_id"),
+    )
+
+
+class StockTakingLine(Base, PKMixin, TenantMixin, AuditMixin):
+    """盘点行。``book_qty`` 是创建时冻结的可用数，``counted_qty`` 在录入前为空。"""
+
+    __tablename__ = "stock_taking_line"
+
+    taking_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sku_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    book_qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    counted_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(["taking_id"], ["stock_taking.id"], name="fk_stock_taking_line_taking_id_stock_taking"),
+        ForeignKeyConstraint(["sku_id"], ["sku.id"], name="fk_stock_taking_line_sku_id_sku"),
+        CheckConstraint("book_qty >= 0 AND (counted_qty IS NULL OR counted_qty >= 0)", name="quantity"),
+        Index("uq_stock_taking_line_tenant_taking_sku", "tenant_id", "taking_id", "sku_id", unique=True),
+        Index("ix_stock_taking_line_tenant_id_taking_id", "tenant_id", "taking_id"),
+    )
+
+
 __all__ = [
     "DEFAULT_SAFE_STOCK",
     "FLOW_TYPES",
     "HOLD_STATUSES",
     "PUSH_STATUSES",
+    "TAKING_STATUSES",
+    "TRANSFER_STATUSES",
     "WAREHOUSE_TYPES",
     "Inventory",
     "InventoryFlow",
     "InventoryHold",
     "InventoryPushLog",
     "PlatformSafetyStock",
+    "StockTaking",
+    "StockTakingLine",
+    "StockTransfer",
+    "StockTransferLine",
     "Warehouse",
 ]

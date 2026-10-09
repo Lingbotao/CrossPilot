@@ -1,4 +1,4 @@
-"""库存台账、仓库、流水、回传和补货建议。跨租户 ID 返回 404。"""
+"""库存台账、仓库、流水、调拨、盘点和补货建议。跨租户 ID 返回 404。"""
 
 from __future__ import annotations
 
@@ -22,6 +22,12 @@ from app.schemas.inventory import (
     ReplenishmentView,
     SafetyStockView,
     SafetyStockWrite,
+    StockTakingCounts,
+    StockTakingCreate,
+    StockTakingView,
+    TransferCreate,
+    TransferView,
+    TurnoverView,
     WarehousePatch,
     WarehouseView,
     WarehouseWrite,
@@ -113,6 +119,178 @@ async def adjust_inventory(
 ) -> ApiResponse[InventoryView]:
     data = await InventoryService(session).adjust(payload, tenant_id=identity.tenant.id, actor_id=identity.user.id)
     return ok(data, message="库存已调整")
+
+
+@router.get("/inventories/transfers", response_model=ApiResponse[PageData[TransferView]], summary="调拨单")
+async def list_transfers(
+    identity: Reader,
+    session: DbSession,
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 20,
+) -> ApiResponse[PageData[TransferView]]:
+    del identity
+    data = await InventoryService(session).list_transfers(limit=limit, cursor=cursor)
+    return ok(data)
+
+
+@router.post("/inventories/transfer", response_model=ApiResponse[TransferView], summary="创建调拨单")
+async def create_transfer(
+    payload: TransferCreate,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[TransferView]:
+    data = await InventoryService(session).create_transfer(
+        payload,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data, message="调拨单已创建")
+
+
+@router.post("/inventories/transfer/{transfer_id}/ship", response_model=ApiResponse[TransferView], summary="发出调拨")
+async def ship_transfer(
+    transfer_id: int,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[TransferView]:
+    data = await InventoryService(session).ship_transfer(
+        transfer_id,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data, message="调拨已发出")
+
+
+@router.post(
+    "/inventories/transfer/{transfer_id}/receive",
+    response_model=ApiResponse[TransferView],
+    summary="调拨收货",
+)
+async def receive_transfer(
+    transfer_id: int,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[TransferView]:
+    data = await InventoryService(session).receive_transfer(
+        transfer_id,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data, message="调拨已收货")
+
+
+@router.post(
+    "/inventories/transfer/{transfer_id}/cancel",
+    response_model=ApiResponse[TransferView],
+    summary="取消调拨",
+)
+async def cancel_transfer(
+    transfer_id: int,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[TransferView]:
+    data = await InventoryService(session).cancel_transfer(
+        transfer_id,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data, message="调拨已取消")
+
+
+@router.get("/inventories/stock-takings", response_model=ApiResponse[PageData[StockTakingView]], summary="盘点单")
+async def list_takings(
+    identity: Reader,
+    session: DbSession,
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 20,
+) -> ApiResponse[PageData[StockTakingView]]:
+    del identity
+    data = await InventoryService(session).list_takings(limit=limit, cursor=cursor)
+    return ok(data)
+
+
+@router.post("/inventories/stock-taking", response_model=ApiResponse[StockTakingView], summary="创建盘点单")
+async def create_taking(
+    payload: StockTakingCreate,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[StockTakingView]:
+    data = await InventoryService(session).create_taking(
+        payload,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data, message="盘点单已创建")
+
+
+@router.patch(
+    "/inventories/stock-taking/{taking_id}",
+    response_model=ApiResponse[StockTakingView],
+    summary="录入实盘",
+)
+async def record_taking_counts(
+    taking_id: int,
+    payload: StockTakingCounts,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[StockTakingView]:
+    data = await InventoryService(session).record_counts(taking_id, payload, actor_id=identity.user.id)
+    return ok(data, message="实盘已保存")
+
+
+@router.post(
+    "/inventories/stock-taking/{taking_id}/post",
+    response_model=ApiResponse[StockTakingView],
+    summary="盘点过账",
+)
+async def post_taking(
+    taking_id: int,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[StockTakingView]:
+    data = await InventoryService(session).post_taking(
+        taking_id,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data, message="盘点已过账")
+
+
+@router.post(
+    "/inventories/stock-taking/{taking_id}/cancel",
+    response_model=ApiResponse[StockTakingView],
+    summary="取消盘点",
+)
+async def cancel_taking(
+    taking_id: int,
+    identity: Writer,
+    session: DbSession,
+    _idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[StockTakingView]:
+    data = await InventoryService(session).cancel_taking(taking_id, actor_id=identity.user.id)
+    return ok(data, message="盘点已取消")
+
+
+@router.get("/inventories/turnover", response_model=ApiResponse[list[TurnoverView]], summary="库存周转")
+async def list_turnover(
+    identity: Reader,
+    session: DbSession,
+    dimension: Annotated[str, Query()] = "sku",
+    window_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> ApiResponse[list[TurnoverView]]:
+    data = await InventoryService(session).turnover(
+        dimension=dimension,
+        window_days=window_days,
+        include_cost=identity.can_view_cost,
+    )
+    return ok(data)
 
 
 @router.patch("/inventories/{inventory_id}", response_model=ApiResponse[InventoryView], summary="修改分仓安全水位")

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from decimal import Decimal
+from typing import Any, NamedTuple
 
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +17,10 @@ from app.models.inventory import (
     InventoryHold,
     InventoryPushLog,
     PlatformSafetyStock,
+    StockTaking,
+    StockTakingLine,
+    StockTransfer,
+    StockTransferLine,
     Warehouse,
 )
 from app.models.order import OrderItem, SalesOrder
@@ -222,6 +227,42 @@ class InventoryRepository(BaseRepository[Inventory]):
             found[(int(sku_id), str(platform_code))] = int(sold)
         return found
 
+    async def physical_rows(self) -> list[PhysicalRow]:
+        """实物 = available + occupied，不含在途。"""
+
+        on_hand = Inventory.available + Inventory.occupied
+        stmt = (
+            select(
+                Inventory.sku_id,
+                Inventory.warehouse_id,
+                on_hand,
+                Sku.sku_code,
+                Sku.purchase_price,
+                Sku.currency,
+                Warehouse.name,
+            )
+            .join(Sku, Sku.id == Inventory.sku_id)
+            .join(Warehouse, Warehouse.id == Inventory.warehouse_id)
+            .where(Sku.deleted_at.is_(None), Warehouse.deleted_at.is_(None))
+        )
+        rows: list[PhysicalRow] = []
+        for sku_id, warehouse_id, qty, sku_code, price, currency, warehouse_name in (
+            await self.session.execute(stmt)
+        ).all():
+            amount = None if price is None else Decimal(price)
+            rows.append(
+                PhysicalRow(
+                    sku_id=int(sku_id),
+                    warehouse_id=int(warehouse_id),
+                    on_hand=int(qty),
+                    sku_code=str(sku_code),
+                    purchase_price=amount,
+                    currency=None if currency is None else str(currency),
+                    warehouse_name=str(warehouse_name),
+                )
+            )
+        return rows
+
 
 class InventoryFlowRepository(BaseRepository[InventoryFlow]):
     model = InventoryFlow
@@ -251,6 +292,21 @@ class InventoryFlowRepository(BaseRepository[InventoryFlow]):
         if flow_type:
             stmt = stmt.where(InventoryFlow.flow_type == flow_type)
         return list((await self.session.execute(stmt)).scalars().all())
+
+    async def shipped_since(self, since: datetime) -> dict[tuple[int, int], int]:
+        stmt = (
+            select(
+                InventoryFlow.sku_id,
+                InventoryFlow.warehouse_id,
+                func.coalesce(func.sum(InventoryFlow.quantity), 0),
+            )
+            .where(InventoryFlow.flow_type == "SHIP", InventoryFlow.created_at >= since)
+            .group_by(InventoryFlow.sku_id, InventoryFlow.warehouse_id)
+        )
+        found: dict[tuple[int, int], int] = {}
+        for sku_id, warehouse_id, qty in (await self.session.execute(stmt)).all():
+            found[(int(sku_id), int(warehouse_id))] = int(qty)
+        return found
 
 
 class InventoryHoldRepository(BaseRepository[InventoryHold]):
@@ -343,11 +399,99 @@ class InventoryPushLogRepository(BaseRepository[InventoryPushLog]):
         return list((await self.session.execute(stmt)).scalars().all())
 
 
+class PhysicalRow(NamedTuple):
+    sku_id: int
+    warehouse_id: int
+    on_hand: int
+    sku_code: str
+    purchase_price: Decimal | None
+    currency: str | None
+    warehouse_name: str
+
+
+class StockTransferRepository(BaseRepository[StockTransfer]):
+    model = StockTransfer
+
+    async def list_cursor(self, *, limit: int, before_id: int | None) -> list[StockTransfer]:
+        stmt = self.base_select().order_by(StockTransfer.id.desc()).limit(limit + 1)
+        if before_id is not None:
+            stmt = stmt.where(StockTransfer.id < before_id)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def lines_for(self, transfer_id: int) -> list[StockTransferLine]:
+        stmt = (
+            select(StockTransferLine)
+            .where(StockTransferLine.transfer_id == transfer_id)
+            .order_by(StockTransferLine.id.asc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def transition(self, transfer_id: int, from_status: str, to_status: str, actor_id: int) -> bool:
+        stmt = (
+            update(StockTransfer)
+            .where(
+                StockTransfer.tenant_id == require_tenant_id(),
+                StockTransfer.id == transfer_id,
+                StockTransfer.status == from_status,
+            )
+            .values(status=to_status, updated_by=actor_id, updated_at=func.now())
+        )
+        result = await self.session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
+    async def add_line(self, line: StockTransferLine) -> StockTransferLine:
+        self.session.add(line)
+        await self.session.flush()
+        return line
+
+
+class StockTakingRepository(BaseRepository[StockTaking]):
+    model = StockTaking
+
+    async def list_cursor(self, *, limit: int, before_id: int | None) -> list[StockTaking]:
+        stmt = self.base_select().order_by(StockTaking.id.desc()).limit(limit + 1)
+        if before_id is not None:
+            stmt = stmt.where(StockTaking.id < before_id)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def lines_for(self, taking_id: int) -> list[StockTakingLine]:
+        stmt = select(StockTakingLine).where(StockTakingLine.taking_id == taking_id).order_by(StockTakingLine.id.asc())
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def line_for_sku(self, taking_id: int, sku_id: int) -> StockTakingLine | None:
+        stmt = select(StockTakingLine).where(
+            StockTakingLine.taking_id == taking_id,
+            StockTakingLine.sku_id == sku_id,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def transition(self, taking_id: int, from_status: str, to_status: str, actor_id: int) -> bool:
+        stmt = (
+            update(StockTaking)
+            .where(
+                StockTaking.tenant_id == require_tenant_id(),
+                StockTaking.id == taking_id,
+                StockTaking.status == from_status,
+            )
+            .values(status=to_status, updated_by=actor_id, updated_at=func.now())
+        )
+        result = await self.session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
+    async def add_line(self, line: StockTakingLine) -> StockTakingLine:
+        self.session.add(line)
+        await self.session.flush()
+        return line
+
+
 __all__ = [
     "InventoryFlowRepository",
     "InventoryHoldRepository",
     "InventoryPushLogRepository",
     "InventoryRepository",
+    "PhysicalRow",
     "PlatformSafetyStockRepository",
+    "StockTakingRepository",
+    "StockTransferRepository",
     "WarehouseRepository",
 ]
