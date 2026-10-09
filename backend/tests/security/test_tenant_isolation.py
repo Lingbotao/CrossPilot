@@ -1610,3 +1610,129 @@ class TestHsBindingIsolation:
         assert by_code[0] == "610910"
         assert name_elapsed < 1
         assert code_elapsed < 1
+
+
+class TestComplianceConfigIsolation:
+    def test_tenant_cannot_read_another_tenants_tax_rule(self, migrated: None) -> None:
+        _assert_hidden(
+            "country_tax_rule",
+            (
+                "id, tenant_id, country, tax_type, hs_code_pattern, rate, basis_numerator, "
+                "basis_denominator, effective_from, version, status, source, verified_by, verified_at"
+            ),
+            "(:id, :tid, 'SG', 'GST', '*', 0.010000, 1, 1, DATE '2026-01-01', 1, 'ACTIVE', 'test source', 1, now())",
+        )
+
+    def test_tenant_cannot_read_another_tenants_certificate(self, migrated: None) -> None:
+        base = 971000000000000000 + time.time_ns() % 10**12
+
+        async def _seed() -> tuple[int, int]:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for offset, tenant_id in ((0, TENANT_A), (1, TENANT_B)):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, :title, 'DRAFT')"),
+                        {"id": base + offset, "tid": tenant_id, "title": f"cert-{offset}"},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku ("
+                            "id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm"
+                            ") VALUES (:id, :tid, :spu, :code, 1, 1, 1, 1)"
+                        ),
+                        {
+                            "id": base + 10 + offset,
+                            "tid": tenant_id,
+                            "spu": base + offset,
+                            "code": f"CERT-{offset}-{base}",
+                        },
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO compliance_certificate ("
+                            "id, tenant_id, sku_id, market, cert_type, cert_no, issued_at, expires_at"
+                            ") VALUES ("
+                            ":id, :tid, :sku, 'US', 'FCC', :cert_no, DATE '2024-01-01', DATE '2028-01-01'"
+                            ")"
+                        ),
+                        {
+                            "id": base + 20 + offset,
+                            "tid": tenant_id,
+                            "sku": base + 10 + offset,
+                            "cert_no": f"FCC-{offset}",
+                        },
+                    )
+                await session.commit()
+            await engine.dispose()
+            return base + 20, base + 21
+
+        cert_a, cert_b = _run(_seed())
+        assert _run(_visible("compliance_certificate", cert_a, cert_b, TENANT_A)) == {cert_a}
+        assert _run(_visible("compliance_certificate", cert_a, cert_b, TENANT_B)) == {cert_b}
+        with pytest.raises(Exception):  # noqa: B017 - 台账不提供删除
+            _run(_delete("compliance_certificate", cert_a))
+
+    def test_tenant_cannot_read_another_tenants_cert_requirement(self, migrated: None) -> None:
+        _assert_hidden(
+            "cert_requirement_rule",
+            "id, tenant_id, market, category_code, cert_type, source, status",
+            "(:id, :tid, 'US', 'wireless', 'FCC', 'operator note', 'ACTIVE')",
+        )
+
+    def test_tenant_cannot_read_another_tenants_compliance_notice(self, migrated: None) -> None:
+        _assert_hidden(
+            "compliance_notice",
+            "id, tenant_id, kind, level, ref_id, due_on, summary",
+            "(:id, :tid, 'TAX_EFFECTIVE', 'D7', 1, DATE '2026-10-16', 'notice')",
+        )
+
+
+def _assert_hidden(table: str, columns: str, values: str) -> None:
+    base = 972000000000000000 + time.time_ns() % 10**12
+    row_a, row_b = base, base + 1
+
+    async def _seed() -> None:
+        engine = create_async_engine(settings.database_migration_url, poolclass=None)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            for row_id, tenant_id in ((row_a, TENANT_A), (row_b, TENANT_B)):
+                await session.execute(
+                    text(f"INSERT INTO {table} ({columns}) VALUES {values}"),
+                    {"id": row_id, "tid": tenant_id},
+                )
+            await session.commit()
+        await engine.dispose()
+
+    _run(_seed())
+    assert _run(_visible(table, row_a, row_b, TENANT_A)) == {row_a}
+    assert _run(_visible(table, row_a, row_b, TENANT_B)) == {row_b}
+    with pytest.raises(Exception):  # noqa: B017 - 应用角色没有 DELETE
+        _run(_delete(table, row_a))
+
+
+async def _visible(table: str, row_a: int, row_b: int, tenant_id: int) -> set[int]:
+    engine, factory = _app_session()
+    async with factory() as session:
+        await _bind(session, tenant_id)
+        rows = (
+            (
+                await session.execute(
+                    text(f"SELECT id FROM {table} WHERE id IN (:a, :b)"),
+                    {"a": row_a, "b": row_b},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    await engine.dispose()
+    return {int(row) for row in rows}
+
+
+async def _delete(table: str, row_id: int) -> None:
+    engine, factory = _app_session()
+    async with factory() as session:
+        await _bind(session, TENANT_A)
+        await session.execute(text(f"DELETE FROM {table} WHERE id = :id"), {"id": row_id})
+        await session.commit()
+    await engine.dispose()

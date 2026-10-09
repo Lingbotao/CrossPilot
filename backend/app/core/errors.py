@@ -11,7 +11,7 @@
 | 50xxx | 订单        | 50001 订单不存在，50002 状态不允许该操作          |
 | 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60004 仓库编码冲突，60005 调拨仓库不合法 |
 | 70xxx | 财务        | 70001 汇率缺失，70002 对账不平                    |
-| 80xxx | 合规        | 80001 缺失 HS 编码，80002 认证已过期              |
+| 80xxx | 合规        | 80001 缺失 HS 编码，80004 税率区间重叠，80006 认证附件不合法 |
 """
 
 from __future__ import annotations
@@ -99,6 +99,8 @@ class ErrorCode(IntEnum):
     HS_CODE_MISSING = 80001
     CERTIFICATE_EXPIRED = 80002
     MARKET_RESTRICTED = 80003
+    TAX_RULE_OVERLAP = 80004
+    CERT_FILE_INVALID = 80006
 
 
 # 默认 HTTP 状态码映射：业务码 → HTTP 码
@@ -164,6 +166,8 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.HS_CODE_MISSING: 422,
     ErrorCode.CERTIFICATE_EXPIRED: 409,
     ErrorCode.MARKET_RESTRICTED: 403,
+    ErrorCode.TAX_RULE_OVERLAP: 409,
+    ErrorCode.CERT_FILE_INVALID: 400,
 }
 
 

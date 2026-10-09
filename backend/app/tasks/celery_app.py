@@ -34,7 +34,13 @@ celery_app = Celery(
     "crosspilot",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.tasks.sync", "app.tasks.batch", "app.tasks.report", "app.tasks.inventory"],
+    include=[
+        "app.tasks.sync",
+        "app.tasks.batch",
+        "app.tasks.report",
+        "app.tasks.inventory",
+        "app.tasks.compliance",
+    ],
 )
 
 celery_app.conf.update(
@@ -87,6 +93,11 @@ celery_app.conf.beat_schedule = {
     "beat-inventory-lag": {
         "task": "batch.scan_inventory_lag",
         "schedule": timedelta(seconds=settings.stock_push_sweep_seconds),
+    },
+    # 税率生效与认证到期提醒。01:15 UTC，避开库存与 Listing 的整点任务。
+    "beat-compliance-alerts": {
+        "task": "compliance.scan_alerts",
+        "schedule": crontab(hour=1, minute=15),
     },
 }
 

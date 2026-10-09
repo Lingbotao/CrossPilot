@@ -108,6 +108,8 @@ export const ErrorCode = {
   HS_CODE_MISSING: 80001,
   CERTIFICATE_EXPIRED: 80002,
   MARKET_RESTRICTED: 80003,
+  TAX_RULE_OVERLAP: 80004,
+  CERT_FILE_INVALID: 80006,
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -1370,4 +1372,116 @@ export interface SpuHsBindingView {
   basis: string;
   updated_by: string | null;
   updated_at: string;
+}
+
+/** ---------- 税率与认证（M4-02 / M4-03） ---------- */
+
+export const TAX_TYPES = ['DUTY', 'VAT', 'GST', 'SST', 'PPN', 'SALES_TAX', 'MPF', 'OTHER'] as const;
+
+export const CERT_TYPES = [
+  'FCC',
+  'FDA',
+  'CPC',
+  'UL_ETL',
+  'TIS',
+  'TH_FDA',
+  'SNI',
+  'BPOM',
+  'CR',
+  'SAFETY_MARK',
+  'SIRIM',
+  'OTHER',
+] as const;
+
+export interface TaxRuleCreate {
+  country: string;
+  tax_type: string;
+  hs_code_pattern: string;
+  rate: string;
+  basis_numerator: number;
+  basis_denominator: number;
+  threshold_amount: string | null;
+  threshold_currency: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  source: string;
+}
+
+export interface TaxRuleView {
+  id: string;
+  country: string;
+  tax_type: string;
+  hs_code_pattern: string;
+  rate: string;
+  rate_percent: string;
+  basis_numerator: number;
+  basis_denominator: number;
+  threshold_amount: string | null;
+  threshold_currency: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  version: number;
+  status: string;
+  source: string;
+  verified_by: string;
+  verified_at: string;
+}
+
+export interface CertificateCreate {
+  sku_id: string;
+  market: string;
+  cert_type: string;
+  cert_no: string;
+  issued_at: string;
+  expires_at: string;
+}
+
+export interface CertificateView {
+  id: string;
+  sku_id: string;
+  sku_code: string;
+  market: string;
+  cert_type: string;
+  cert_no: string;
+  issued_at: string;
+  expires_at: string;
+  object_key: string | null;
+  content_type: string | null;
+  updated_at: string;
+}
+
+export interface CertificateImportResult {
+  imported: number;
+  updated: number;
+}
+
+export interface CertRequirementCreate {
+  market: string;
+  category_code: string;
+  cert_type: string;
+  source: string;
+}
+
+export interface CertRequirementView {
+  id: string;
+  market: string;
+  category_code: string;
+  cert_type: string;
+  source: string;
+  status: string;
+  updated_at: string;
+}
+
+export interface CertGapView {
+  cert_type: string;
+  reason: string;
+}
+
+export interface ComplianceAlertView {
+  kind: string;
+  level: string;
+  ref_id: string;
+  due_on: string;
+  summary: string;
+  emailed_at: string | null;
 }

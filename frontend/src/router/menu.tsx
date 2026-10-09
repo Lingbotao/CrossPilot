@@ -32,7 +32,9 @@ import { TransfersPage } from '@/pages/inventory/TransfersPage';
 import { OverviewPage } from '@/pages/inventory/OverviewPage';
 import { ReplenishmentPage } from '@/pages/inventory/ReplenishmentPage';
 import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
+import { CertificatesPage } from '@/pages/compliance/CertificatesPage';
 import { HsCodesPage } from '@/pages/compliance/HsCodesPage';
+import { TaxRulesPage } from '@/pages/compliance/TaxRulesPage';
 import { CategoryTemplatesPage } from '@/pages/products/CategoryTemplatesPage';
 import { ImagesPage } from '@/pages/products/ImagesPage';
 import { ListingsPage } from '@/pages/products/ListingsPage';
@@ -331,7 +333,8 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         icon: null,
         permission: Perm.COMPLIANCE_READ,
         milestone: 'M4（Week 8–9）',
-        delivered: false,
+        delivered: true,
+        component: TaxRulesPage,
       },
       {
         key: 'compliance-certificates',
@@ -340,7 +343,8 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         icon: null,
         permission: Perm.COMPLIANCE_READ,
         milestone: 'M4（Week 8–9）',
-        delivered: false,
+        delivered: true,
+        component: CertificatesPage,
       },
     ],
   },

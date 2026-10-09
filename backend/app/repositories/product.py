@@ -77,6 +77,10 @@ class SkuRepository(BaseRepository[Sku]):
         rows = (await self.session.execute(stmt)).all()
         return {int(spu_id): int(count) for spu_id, count in rows}
 
+    async def get_by_code(self, sku_code: str) -> Sku | None:
+        stmt = self.base_select().where(Sku.sku_code == sku_code)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def code_taken(self, sku_code: str, *, exclude_id: int | None = None) -> bool:
         stmt = self.base_select().where(Sku.sku_code == sku_code)
         if exclude_id is not None:

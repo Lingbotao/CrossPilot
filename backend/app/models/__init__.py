@@ -17,6 +17,12 @@ from __future__ import annotations
 
 from app.db.base import Base
 from app.models.audit import AuditLog, LoginLog
+from app.models.compliance import (
+    CertRequirementRule,
+    ComplianceCertificate,
+    ComplianceNotice,
+    CountryTaxRule,
+)
 from app.models.config import PlatformRateLimit, PlatformStatusMapping
 from app.models.enums import (
     AuditAction,
@@ -120,6 +126,10 @@ __all__ = [
     # 合规域（批次 5）
     "HsCode",
     "SpuHsBinding",
+    "CountryTaxRule",
+    "ComplianceCertificate",
+    "CertRequirementRule",
+    "ComplianceNotice",
     # 枚举
     "TenantPlan",
     "TenantStatus",

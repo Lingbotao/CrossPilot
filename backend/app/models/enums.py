@@ -111,6 +111,8 @@ class AuditAction:
     COST_UPDATE = "COST_UPDATE"
     PRODUCT_STATUS = "PRODUCT_STATUS"
     HS_BIND = "HS_BIND"
+    TAX_RULE = "TAX_RULE"
+    CERT_RECORD = "CERT_RECORD"
     ROLE_CHANGE = "ROLE_CHANGE"
     SYSTEM_CONFIG = "SYSTEM_CONFIG"
 
@@ -134,6 +136,8 @@ class AuditAction:
         COST_UPDATE,
         PRODUCT_STATUS,
         HS_BIND,
+        TAX_RULE,
+        CERT_RECORD,
         ROLE_CHANGE,
         SYSTEM_CONFIG,
     )
