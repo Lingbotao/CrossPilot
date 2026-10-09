@@ -59,7 +59,7 @@ def test_registration_validation_conflicts_and_private_resend(client: TestClient
         "/api/v1/auth/register",
         json={
             "email": email,
-            "password": "weakpassword",
+            "password": "weakpassword",  # secret-scan: allow
             "tenant_code": suffix,
             "tenant_name": "弱密码测试",
         },

@@ -85,6 +85,15 @@ SKIP_PATH_PARTS = {
     "htmlcov",
 }
 
+# 后缀是 .json / .yaml 的锁文件，SKIP_SUFFIXES 里的 .lock 盖不住。
+# 里面的 sha512 integrity 是包校验和，不是密钥。
+SKIP_FILE_NAMES = {
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "packages.lock.json",
+}
+
 # 这些文件本身就是"放占位符"的地方，但仍然会被扫描（只是允许更多占位形态）
 EXAMPLE_FILE_HINTS = (".env.example", ".env.sample", ".env.template")
 
@@ -121,7 +130,10 @@ ASSIGN_PATTERN = re.compile(
 )
 
 PLACEHOLDER_PATTERNS = [
-    re.compile(r"^(?:change[-_]?me|replace[-_]?me|your[-_]|my[-_]|example|demo|test|dummy|fake)", re.IGNORECASE),
+    re.compile(
+        r"^(?:change[-_]?me|replace[-_]?me|your[-_]|my[-_]|example|demo|test|dummy|fake|fixture)",
+        re.IGNORECASE,
+    ),
     re.compile(r"^(?:x{3,}|\*{3,}|-{3,}|_{3,}|\.{3,})$"),
     re.compile(r"<[^>]+>"),  # <YOUR_KEY>
     re.compile(r"^\$\{?[A-Z_]+\}?$"),  # ${ENV_VAR}
@@ -154,6 +166,10 @@ SELF_TEST_CASES: list[tuple[str, bool]] = [
     ("0123456789ABCDEFGHJKMNPQRSTVWXYZ", False),  # Crockford Base32 字符表
     ("backend/tests/security/test_tenant_isolation.py", False),  # 文件路径
     ("foreign_pre_chain=_shared_processors", False),  # 关键字参数
+    ("org/officeDocument/2006/relationships", False),  # OpenXML 命名空间路径
+    ("ROOT/infra/postgres/init/01-init", False),  # shell 路径（$ROOT/...）
+    ('app_secret = "fixture-secret"', False),  # 测试夹具，不是凭证
+    ("kQ3vN8pL/x2RzM7tYwB4cD9fGhJ5sV1nE", True),  # 含斜杠的随机串仍要抓
 ]
 
 
@@ -167,17 +183,34 @@ def shannon_entropy(value: str) -> float:
     return -sum((count / length) * math.log2(count / length) for count in counts.values())
 
 
+def _is_path_segment(part: str) -> bool:
+    """路径的一段：小写、全大写、纯数字，或驼峰单词。中间夹数字的混合串不是路径。"""
+    if part.isdigit():
+        return True
+    if re.fullmatch(r"[a-z0-9_-]+", part) or re.fullmatch(r"[A-Z][A-Z0-9_-]*", part):
+        return True
+    return bool(re.fullmatch(r"[A-Za-z][a-z]*(?:[A-Z][a-z]*)*", part))
+
+
 def looks_like_path(value: str) -> bool:
-    """文件路径不是密钥。
+    """文件路径 / URL 片段不是密钥。
 
     Markdown 表格里的 `backend/tests/security/test_tenant_isolation.py` 这类长路径
-    会踩中高熵启发式（长度 >32、字符集单一、含斜杠）。判据取「全小写 + 含斜杠」：
+    会踩中高熵启发式（长度 >32、字符集单一、含斜杠）。全小写路径直接放过：
     真实随机密钥在 32 字符上几乎不可能全是小写 —— 标准 base64 必然含大写字母，
-    而 base64url（`secrets.token_urlsafe` 用的）不含 `/`。所以这个过滤不会放过密钥。
+    而 base64url（`secrets.token_urlsafe` 用的）不含 `/`。
+
+    OpenXML 命名空间和 `$ROOT/infra/...` 会带驼峰或大写段。要求每一段都像路径单词；
+    段内同时混入大小写和数字的（标准 base64 插了 `/`）仍然视为密钥。
     """
     if "/" not in value:
         return False
-    return bool(re.fullmatch(r"[a-z0-9_./-]+", value))
+    if re.fullmatch(r"[a-z0-9_./-]+", value):
+        return True
+    segments = [part for part in value.split("/") if part]
+    if len(segments) < 2:
+        return False
+    return all(_is_path_segment(part) for part in segments)
 
 
 def looks_like_placeholder(value: str) -> bool:
@@ -272,6 +305,8 @@ def iter_target_files(explicit: list[str]) -> list[Path]:
 
 def should_skip(path: Path) -> bool:
     if any(part in SKIP_PATH_PARTS for part in path.parts):
+        return True
+    if path.name in SKIP_FILE_NAMES:
         return True
     if path.suffix.lower() in SKIP_SUFFIXES:
         return True
