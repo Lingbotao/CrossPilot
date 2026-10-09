@@ -3,12 +3,21 @@ import { Alert, Button, Card, Space, Table, Tabs, Tag, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
+import { complianceApi } from '@/api/compliance';
 import { listingsApi } from '@/api/listings';
 import { localeApi } from '@/api/locale';
 import { productsApi } from '@/api/products';
-import type { ContentQuality, ListingContentView, ListingView, ProductImageView, SkuView } from '@/api/types';
+import {
+  Perm,
+  type ContentQuality,
+  type ListingContentView,
+  type ListingView,
+  type ProductImageView,
+  type SkuView,
+  type SpuHsBindingView,
+} from '@/api/types';
 import { MoneyText } from '@/components/MoneyText';
-import { CostGuard } from '@/components/PermissionGuard';
+import { CostGuard, PermissionGuard } from '@/components/PermissionGuard';
 import zhCN from '@/i18n/zh-CN';
 
 const copy = zhCN.productDetail;
@@ -23,6 +32,40 @@ const QUALITY_LABEL: Record<ContentQuality, string> = {
 
 function messageOf(error: unknown): string {
   return error instanceof ApiError ? error.message : zhCN.inventoryPage.requestFailed;
+}
+
+function ProductHsBindings({ spuId }: { spuId: string }) {
+  const bindings = useQuery({
+    queryKey: ['spu-hs-bindings', spuId],
+    queryFn: () => complianceApi.bindings(spuId),
+  });
+  if (bindings.isError) {
+    return <Alert type="error" message={messageOf(bindings.error)} />;
+  }
+  return (
+    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      <Typography.Text strong>{copy.hsTitle}</Typography.Text>
+      <Table<SpuHsBindingView>
+        rowKey="id"
+        loading={bindings.isLoading}
+        pagination={false}
+        dataSource={bindings.data ?? []}
+        locale={{ emptyText: copy.hsEmpty }}
+        columns={[
+          { title: copy.hsMarket, dataIndex: 'market', width: 80 },
+          { title: copy.hsCode, dataIndex: 'code', width: 140 },
+          { title: copy.hsDescription, dataIndex: 'description' },
+          { title: copy.hsBasis, dataIndex: 'basis' },
+          {
+            title: copy.hsUpdated,
+            dataIndex: 'updated_at',
+            width: 200,
+            render: (value: string) => new Date(value).toLocaleString('zh-CN'),
+          },
+        ]}
+      />
+    </Space>
+  );
 }
 
 export function ProductDetailPage() {
@@ -125,6 +168,9 @@ export function ProductDetailPage() {
               label: copy.tabCompliance,
               children: (
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                  <PermissionGuard permission={Perm.COMPLIANCE_READ}>
+                    <ProductHsBindings spuId={spuId} />
+                  </PermissionGuard>
                   <Typography.Paragraph type="secondary">{copy.complianceHint}</Typography.Paragraph>
                   <Typography.Text strong>{copy.imageCheck}</Typography.Text>
                   <Table<ProductImageView>

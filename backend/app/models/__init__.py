@@ -32,6 +32,7 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
+from app.models.hs_code import HsCode, SpuHsBinding
 from app.models.inventory import (
     Inventory,
     InventoryFlow,
@@ -116,6 +117,9 @@ __all__ = [
     "StockTransferLine",
     "StockTaking",
     "StockTakingLine",
+    # 合规域（批次 5）
+    "HsCode",
+    "SpuHsBinding",
     # 枚举
     "TenantPlan",
     "TenantStatus",

@@ -32,6 +32,7 @@ import { TransfersPage } from '@/pages/inventory/TransfersPage';
 import { OverviewPage } from '@/pages/inventory/OverviewPage';
 import { ReplenishmentPage } from '@/pages/inventory/ReplenishmentPage';
 import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
+import { HsCodesPage } from '@/pages/compliance/HsCodesPage';
 import { CategoryTemplatesPage } from '@/pages/products/CategoryTemplatesPage';
 import { ImagesPage } from '@/pages/products/ImagesPage';
 import { ListingsPage } from '@/pages/products/ListingsPage';
@@ -303,6 +304,45 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     permission: Perm.COMPLIANCE_READ,
     milestone: 'M4（Week 8–9）· ★ 核心差异化',
     delivered: false,
+    children: [
+      {
+        key: 'compliance-report',
+        path: '/compliance/report',
+        label: zhCN.menu.complianceReport,
+        icon: null,
+        permission: Perm.COMPLIANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: false,
+      },
+      {
+        key: 'compliance-hs',
+        path: '/compliance/hs-codes',
+        label: zhCN.menu.complianceHs,
+        icon: null,
+        permission: Perm.COMPLIANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: true,
+        component: HsCodesPage,
+      },
+      {
+        key: 'compliance-tax',
+        path: '/compliance/tax-rules',
+        label: zhCN.menu.complianceTax,
+        icon: null,
+        permission: Perm.COMPLIANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: false,
+      },
+      {
+        key: 'compliance-certificates',
+        path: '/compliance/certificates',
+        label: zhCN.menu.complianceCertificates,
+        icon: null,
+        permission: Perm.COMPLIANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: false,
+      },
+    ],
   },
   {
     key: 'purchase',

@@ -1508,3 +1508,105 @@ class TestInventoryIsolation:
         with pytest.raises(Exception):  # noqa: B017 - 预占超过实物违反 CHECK
             _run(_reject_negative())
         assert _run(_stop_at_available()) == 3
+
+
+class TestHsBindingIsolation:
+    def test_tenant_cannot_read_another_tenants_hs_binding(self, migrated: None) -> None:
+        base = 970000000000000000 + time.time_ns() % 10**12
+        spu_a, spu_b = base, base + 1
+        bind_a, bind_b = base + 2, base + 3
+
+        async def _hs_id() -> int:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                code_id = (await session.execute(text("SELECT id FROM hs_code WHERE code = '610910'"))).scalar_one()
+            await engine.dispose()
+            return int(code_id)
+
+        hs_id = _run(_hs_id())
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for spu_id, tenant_id, title in (
+                    (spu_a, TENANT_A, "hs-product-a"),
+                    (spu_b, TENANT_B, "hs-product-b"),
+                ):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, :title, 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id, "title": title},
+                    )
+                for bind_id, tenant_id, spu_id, market in (
+                    (bind_a, TENANT_A, spu_a, "US"),
+                    (bind_b, TENANT_B, spu_b, "SG"),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO spu_hs_binding ("
+                            "id, tenant_id, spu_id, market, hs_code_id, basis"
+                            ") VALUES (:id, :tid, :spu, :market, :hs, :basis)"
+                        ),
+                        {
+                            "id": bind_id,
+                            "tid": tenant_id,
+                            "spu": spu_id,
+                            "market": market,
+                            "hs": hs_id,
+                            "basis": "棉质针织",
+                        },
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(tenant_id: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (
+                    (
+                        await session.execute(
+                            text("SELECT id FROM spu_hs_binding WHERE id IN (:a, :b)"),
+                            {"a": bind_a, "b": bind_b},
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_binding() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM spu_hs_binding WHERE id = :id"), {"id": bind_a})
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        assert _run(_visible(TENANT_A)) == {bind_a}
+        assert _run(_visible(TENANT_B)) == {bind_b}
+        with pytest.raises(Exception):  # noqa: B017 - 绑定不提供删除，应用角色没有 DELETE
+            _run(_delete_binding())
+
+    def test_seeded_description_search_returns_within_one_second(self, migrated: None) -> None:
+        import app.db.session  # noqa: F401 - 注册 ORM 租户监听
+        from app.repositories.hs_code import HsCodeRepository
+
+        async def _search(q: str) -> tuple[list[str], float]:
+            engine, factory = _app_session()
+            started = time.perf_counter()
+            async with factory() as session:
+                rows = await HsCodeRepository(session).search(q, limit=20)
+            elapsed = time.perf_counter() - started
+            await engine.dispose()
+            return [row.code for row in rows], elapsed
+
+        by_name, name_elapsed = _run(_search("T恤衫"))
+        by_code, code_elapsed = _run(_search("610910"))
+        assert by_name[0] == "610910"
+        assert by_code[0] == "610910"
+        assert name_elapsed < 1
+        assert code_elapsed < 1

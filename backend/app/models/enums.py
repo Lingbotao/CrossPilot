@@ -110,6 +110,7 @@ class AuditAction:
     DATA_EXPORT = "DATA_EXPORT"
     COST_UPDATE = "COST_UPDATE"
     PRODUCT_STATUS = "PRODUCT_STATUS"
+    HS_BIND = "HS_BIND"
     ROLE_CHANGE = "ROLE_CHANGE"
     SYSTEM_CONFIG = "SYSTEM_CONFIG"
 
@@ -132,6 +133,7 @@ class AuditAction:
         DATA_EXPORT,
         COST_UPDATE,
         PRODUCT_STATUS,
+        HS_BIND,
         ROLE_CHANGE,
         SYSTEM_CONFIG,
     )

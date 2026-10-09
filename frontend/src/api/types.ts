@@ -1341,3 +1341,33 @@ export interface TurnoverView {
   dead_stock_amount: string | null;
   currency: string | null;
 }
+
+/** ---------- HS 编码（M4-01） ---------- */
+
+export interface HsCodeHit {
+  id: string;
+  code: string;
+  description: string;
+  chapter: string;
+  level: number;
+  source: string;
+}
+
+export interface HsBindRequest {
+  market: string;
+  hs_code_id: string;
+  basis: string;
+}
+
+export interface SpuHsBindingView {
+  id: string;
+  spu_id: string;
+  market: string;
+  hs_code_id: string;
+  code: string;
+  description: string;
+  source: string;
+  basis: string;
+  updated_by: string | null;
+  updated_at: string;
+}
