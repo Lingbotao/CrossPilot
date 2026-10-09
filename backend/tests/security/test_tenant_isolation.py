@@ -1214,3 +1214,232 @@ class TestLocaleIsolation:
         assert _run(_visible(sensitive_sql, TENANT_B, sensitive_a, sensitive_b)) == {sensitive_b}
         with pytest.raises(Exception):  # noqa: B017 - 文案是主数据，应用角色没有 DELETE
             _run(_delete_content())
+
+
+class TestInventoryIsolation:
+    def test_tenant_cannot_read_another_tenants_stock_and_ledgers_reject_delete(self, migrated: None) -> None:
+        base = 984000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        spu_a, spu_b = base + 2, base + 3
+        sku_a, sku_b = base + 4, base + 5
+        order_a, order_b = base + 6, base + 7
+        warehouse_a, warehouse_b = base + 8, base + 9
+        inventory_a, inventory_b = base + 10, base + 11
+        flow_a, flow_b = base + 12, base + 13
+        hold_a, hold_b = base + 14, base + 15
+        safety_a, safety_b = base + 16, base + 17
+        push_a, push_b = base + 18, base + 19
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', 'stock', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"stock-{shop_id}"},
+                    )
+                for spu_id, tenant_id in ((spu_a, TENANT_A), (spu_b, TENANT_B)):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, 'stock', 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id},
+                    )
+                for sku_id, tenant_id, spu_id in ((sku_a, TENANT_A, spu_a), (sku_b, TENANT_B, spu_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku ("
+                            "id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm"
+                            ") VALUES (:id, :tid, :spu, :code, 100, 10, 10, 10)"
+                        ),
+                        {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": f"STK-{sku_id}"},
+                    )
+                for order_id, tenant_id, shop_id in ((order_a, TENANT_A, shop_a), (order_b, TENANT_B, shop_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sales_order ("
+                            "id, tenant_id, shop_id, platform_code, platform_order_id, idempotency_key, "
+                            "platform_status, unified_status, currency, item_amount, shipping_amount, "
+                            "tax_amount, discount_amount, total_amount"
+                            ") VALUES ("
+                            ":id, :tid, :shop, 'shopee', :pid, :key, 'READY_TO_SHIP', 'PAID', 'SGD', "
+                            "1, 0, 0, 0, 1)"
+                        ),
+                        {
+                            "id": order_id,
+                            "tid": tenant_id,
+                            "shop": shop_id,
+                            "pid": f"P-{order_id}",
+                            "key": f"shopee:{shop_id}:P-{order_id}",
+                        },
+                    )
+                for warehouse_id, tenant_id in ((warehouse_a, TENANT_A), (warehouse_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO warehouse (id, tenant_id, name, warehouse_type, country) "
+                            "VALUES (:id, :tid, '主仓', 'LOCAL', 'CN')"
+                        ),
+                        {"id": warehouse_id, "tid": tenant_id},
+                    )
+                for inventory_id, tenant_id, sku_id, warehouse_id in (
+                    (inventory_a, TENANT_A, sku_a, warehouse_a),
+                    (inventory_b, TENANT_B, sku_b, warehouse_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO inventory (id, tenant_id, sku_id, warehouse_id, available) "
+                            "VALUES (:id, :tid, :sku, :warehouse, 3)"
+                        ),
+                        {"id": inventory_id, "tid": tenant_id, "sku": sku_id, "warehouse": warehouse_id},
+                    )
+                for flow_id, tenant_id, inventory_id, sku_id, warehouse_id in (
+                    (flow_a, TENANT_A, inventory_a, sku_a, warehouse_a),
+                    (flow_b, TENANT_B, inventory_b, sku_b, warehouse_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO inventory_flow ("
+                            "id, tenant_id, inventory_id, sku_id, warehouse_id, flow_type, quantity, "
+                            "before_qty, after_qty"
+                            ") VALUES (:id, :tid, :inventory, :sku, :warehouse, 'INBOUND', 3, 0, 3)"
+                        ),
+                        {
+                            "id": flow_id,
+                            "tid": tenant_id,
+                            "inventory": inventory_id,
+                            "sku": sku_id,
+                            "warehouse": warehouse_id,
+                        },
+                    )
+                for hold_id, tenant_id, order_id, sku_id in (
+                    (hold_a, TENANT_A, order_a, sku_a),
+                    (hold_b, TENANT_B, order_b, sku_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO inventory_hold ("
+                            "id, tenant_id, order_id, order_item_id, sku_id, status"
+                            ") VALUES (:id, :tid, :order_id, :item, :sku, 'SHORT')"
+                        ),
+                        {"id": hold_id, "tid": tenant_id, "order_id": order_id, "item": hold_id, "sku": sku_id},
+                    )
+                for safety_id, tenant_id, sku_id in ((safety_a, TENANT_A, sku_a), (safety_b, TENANT_B, sku_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO platform_safety_stock ("
+                            "id, tenant_id, sku_id, platform_code, lead_time_days, cover_days"
+                            ") VALUES (:id, :tid, :sku, 'shopee', 7, 7)"
+                        ),
+                        {"id": safety_id, "tid": tenant_id, "sku": sku_id},
+                    )
+                for push_id, tenant_id, shop_id, sku_id in (
+                    (push_a, TENANT_A, shop_a, sku_a),
+                    (push_b, TENANT_B, shop_b, sku_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO inventory_push_log ("
+                            "id, tenant_id, shop_id, sku_id, platform_code, quantity, status"
+                            ") VALUES (:id, :tid, :shop, :sku, 'shopee', 1, 'SUCCESS')"
+                        ),
+                        {"id": push_id, "tid": tenant_id, "shop": shop_id, "sku": sku_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        async def _visible(sql: str, tenant_id: int, left: int, right: int) -> set[int]:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, tenant_id)
+                rows = (await session.execute(text(sql), {"a": left, "b": right})).scalars().all()
+            await engine.dispose()
+            return {int(row) for row in rows}
+
+        async def _delete_flow() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM inventory_flow WHERE id = :id"), {"id": flow_a})
+                await session.commit()
+            await engine.dispose()
+
+        async def _delete_push() -> None:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                await session.execute(text("DELETE FROM inventory_push_log WHERE id = :id"), {"id": push_a})
+                await session.commit()
+            await engine.dispose()
+
+        async def _reject_negative() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                extra_warehouse = base + 31
+                await session.execute(
+                    text(
+                        "INSERT INTO warehouse (id, tenant_id, name, warehouse_type, country) "
+                        "VALUES (:id, :tid, '次仓', 'LOCAL', 'CN')"
+                    ),
+                    {"id": extra_warehouse, "tid": TENANT_A},
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO inventory (id, tenant_id, sku_id, warehouse_id, available, occupied) "
+                        "VALUES (:id, :tid, :sku, :warehouse, 1, 2)"
+                    ),
+                    {
+                        "id": base + 30,
+                        "tid": TENANT_A,
+                        "sku": sku_a,
+                        "warehouse": extra_warehouse,
+                    },
+                )
+                await session.commit()
+            await engine.dispose()
+
+        async def _stop_at_available() -> int:
+            engine, factory = _app_session()
+            async with factory() as session:
+                await _bind(session, TENANT_A)
+                applied = 0
+                for _ in range(5):
+                    result = await session.execute(
+                        text(
+                            "UPDATE inventory SET occupied = occupied + 1, version = version + 1 "
+                            "WHERE id = :id AND available - occupied >= 1"
+                        ),
+                        {"id": inventory_a},
+                    )
+                    if result.rowcount == 1:
+                        applied += 1
+                occupied = (
+                    await session.execute(text("SELECT occupied FROM inventory WHERE id = :id"), {"id": inventory_a})
+                ).scalar_one()
+                await session.commit()
+            await engine.dispose()
+            assert int(occupied) == 3
+            return applied
+
+        _run(_seed())
+        pairs = (
+            ("SELECT id FROM warehouse WHERE id IN (:a, :b)", warehouse_a, warehouse_b),
+            ("SELECT id FROM inventory WHERE id IN (:a, :b)", inventory_a, inventory_b),
+            ("SELECT id FROM inventory_flow WHERE id IN (:a, :b)", flow_a, flow_b),
+            ("SELECT id FROM inventory_hold WHERE id IN (:a, :b)", hold_a, hold_b),
+            ("SELECT id FROM platform_safety_stock WHERE id IN (:a, :b)", safety_a, safety_b),
+            ("SELECT id FROM inventory_push_log WHERE id IN (:a, :b)", push_a, push_b),
+        )
+        for sql, left, right in pairs:
+            assert _run(_visible(sql, TENANT_A, left, right)) == {left}
+            assert _run(_visible(sql, TENANT_B, left, right)) == {right}
+        with pytest.raises(Exception):  # noqa: B017 - 流水不能删
+            _run(_delete_flow())
+        with pytest.raises(Exception):  # noqa: B017 - 回传日志不能删
+            _run(_delete_push())
+        with pytest.raises(Exception):  # noqa: B017 - 预占超过实物违反 CHECK
+            _run(_reject_negative())
+        assert _run(_stop_at_available()) == 3

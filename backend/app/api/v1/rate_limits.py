@@ -30,6 +30,7 @@ def _view(item: RateLimitView) -> RateLimitResponse:
         batch_limit=spec.batch_limit,
         daily_quota=spec.daily_quota,
         concurrency=spec.concurrency,
+        stock_push_lag_seconds=spec.stock_push_lag_seconds,
         source=cast(RateLimitSource, item.source),
         updated_at=item.updated_at,
     )
@@ -45,6 +46,7 @@ def _saved(row: PlatformRateLimit) -> RateLimitResponse:
         batch_limit=row.batch_limit,
         daily_quota=row.daily_quota,
         concurrency=row.concurrency,
+        stock_push_lag_seconds=row.stock_push_lag_seconds,
         source="table",
         updated_at=row.updated_at,
     )
@@ -83,6 +85,7 @@ async def upsert_rate_limit(
         batch_limit=payload.batch_limit,
         daily_quota=payload.daily_quota,
         concurrency=payload.concurrency,
+        stock_push_lag_seconds=payload.stock_push_lag_seconds,
         user_id=identity.user.id,
     )
     return ok(_saved(row))

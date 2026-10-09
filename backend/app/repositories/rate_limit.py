@@ -29,6 +29,7 @@ class PlatformRateLimitRepository(BaseRepository[PlatformRateLimit]):
         batch_limit: int,
         concurrency: int | None,
         daily_quota: int | None,
+        stock_push_lag_seconds: int,
         user_id: int,
     ) -> PlatformRateLimit:
         stmt = self.base_select().where(PlatformRateLimit.platform_code == platform_code)
@@ -40,6 +41,7 @@ class PlatformRateLimitRepository(BaseRepository[PlatformRateLimit]):
             row.batch_limit = batch_limit
             row.concurrency = concurrency
             row.daily_quota = daily_quota
+            row.stock_push_lag_seconds = stock_push_lag_seconds
             row.updated_by = user_id
             await self.session.flush()
             return row
@@ -51,6 +53,7 @@ class PlatformRateLimitRepository(BaseRepository[PlatformRateLimit]):
             batch_limit=batch_limit,
             concurrency=concurrency,
             daily_quota=daily_quota,
+            stock_push_lag_seconds=stock_push_lag_seconds,
             created_by=user_id,
             updated_by=user_id,
         )
@@ -66,6 +69,7 @@ class PlatformRateLimitRepository(BaseRepository[PlatformRateLimit]):
             raced.batch_limit = batch_limit
             raced.concurrency = concurrency
             raced.daily_quota = daily_quota
+            raced.stock_push_lag_seconds = stock_push_lag_seconds
             raced.updated_by = user_id
             await self.session.flush()
             return raced

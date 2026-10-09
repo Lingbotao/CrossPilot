@@ -39,6 +39,7 @@ class ReturnStatus(StrEnum):
 class RestockStatus(StrEnum):
     NONE = "NONE"
     DEFERRED = "DEFERRED"
+    POSTED = "POSTED"
 
 
 REVIEW_STATUS_SQL: Final[str] = ", ".join(f"'{item.value}'" for item in ReviewStatus)

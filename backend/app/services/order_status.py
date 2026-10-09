@@ -17,6 +17,7 @@ from app.engines.order_status import (
     DecisionKind,
     StatusChangeSource,
     StatusDecision,
+    UnifiedStatus,
     decide_status,
     merge_mapping,
     parse_unified,
@@ -124,7 +125,32 @@ class OrderStatusService:
                 remark=UNMAPPED_REMARK if decision.unmapped else None,
             )
         await OrderDeskService(self.session).apply_review(row)
+        if decision is not None and decision.kind == DecisionKind.APPLY:
+            await self._sync_inventory(row.id, decision)
         return action, decision
+
+    async def _sync_inventory(self, order_id: int, decision: StatusDecision) -> None:
+        """付款预占，未发货取消释放。已经发货的取消不在这里回库存。"""
+
+        from app.services.inventory import InventoryService
+
+        inventory = InventoryService(self.session)
+        to_status = decision.to_status
+        from_status = decision.from_status
+        unpaid = {None, UnifiedStatus.PENDING}
+        if to_status == UnifiedStatus.CANCELLED and from_status in {None, UnifiedStatus.PENDING, UnifiedStatus.PAID}:
+            await inventory.release_order(order_id)
+            return
+        if to_status == UnifiedStatus.PAID and from_status in unpaid:
+            await inventory.reserve_order(order_id)
+            return
+        shipped = {UnifiedStatus.SHIPPED, UnifiedStatus.DELIVERED, UnifiedStatus.COMPLETED}
+        if to_status in shipped and from_status in unpaid:
+            await inventory.reserve_order(order_id)
+            await inventory.ship_order(order_id)
+            return
+        if to_status in shipped and from_status == UnifiedStatus.PAID:
+            await inventory.ship_order(order_id)
 
 
 __all__ = ["OrderStatusService"]

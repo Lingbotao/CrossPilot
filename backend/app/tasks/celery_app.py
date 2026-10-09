@@ -34,7 +34,7 @@ celery_app = Celery(
     "crosspilot",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.tasks.sync", "app.tasks.batch", "app.tasks.report"],
+    include=["app.tasks.sync", "app.tasks.batch", "app.tasks.report", "app.tasks.inventory"],
 )
 
 celery_app.conf.update(
@@ -82,6 +82,11 @@ celery_app.conf.beat_schedule = {
     "beat-listing-diffs": {
         "task": "sync.scan_listing_diffs",
         "schedule": crontab(hour=16, minute=0),
+    },
+    # 巡检间隔来自配置。超过平台滞后阈值的店铺回传 0。
+    "beat-inventory-lag": {
+        "task": "batch.scan_inventory_lag",
+        "schedule": timedelta(seconds=settings.stock_push_sweep_seconds),
     },
 }
 

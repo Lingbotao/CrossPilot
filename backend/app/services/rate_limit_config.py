@@ -25,6 +25,7 @@ class StoredQuota:
     batch_limit: int
     daily_quota: int | None = None
     concurrency: int | None = None
+    stock_push_lag_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,10 @@ def effective_spec(platform: str, stored: StoredQuota | None) -> RateLimitSpec:
     """没有配置行时用代码默认值，有行时整行替换。"""
     if stored is None:
         return quota_for(platform)
+    fallback = quota_for(platform)
+    lag = stored.stock_push_lag_seconds
+    if lag is None:
+        lag = fallback.stock_push_lag_seconds
     return RateLimitSpec(
         qps=stored.qps,
         burst=stored.burst,
@@ -47,6 +52,7 @@ def effective_spec(platform: str, stored: StoredQuota | None) -> RateLimitSpec:
         batch_limit=stored.batch_limit,
         daily_quota=stored.daily_quota,
         concurrency=stored.concurrency,
+        stock_push_lag_seconds=lag,
     )
 
 
@@ -59,6 +65,7 @@ def parse_quota(
     batch_limit: int,
     daily_quota: int | None,
     concurrency: int | None,
+    stock_push_lag_seconds: int | None = None,
 ) -> tuple[str, StoredQuota]:
     code = platform_code.strip().lower()
     if code not in SUPPORTED_PLATFORMS:
@@ -72,6 +79,11 @@ def parse_quota(
         raise ParamInvalidError("日配额必须大于 0")
     if concurrency is not None and concurrency < 1:
         raise ParamInvalidError("建议并发必须大于 0")
+    lag = stock_push_lag_seconds
+    if lag is None:
+        lag = quota_for(code).stock_push_lag_seconds
+    if lag < 1:
+        raise ParamInvalidError("库存回传滞后阈值必须大于 0")
     return code, StoredQuota(
         qps=qps,
         burst=burst,
@@ -79,6 +91,7 @@ def parse_quota(
         batch_limit=batch_limit,
         daily_quota=daily_quota,
         concurrency=concurrency,
+        stock_push_lag_seconds=lag,
     )
 
 
@@ -90,6 +103,7 @@ def _stored_from_row(row: PlatformRateLimit) -> StoredQuota:
         batch_limit=row.batch_limit,
         daily_quota=row.daily_quota,
         concurrency=row.concurrency,
+        stock_push_lag_seconds=row.stock_push_lag_seconds,
     )
 
 
@@ -131,7 +145,13 @@ class RateLimitConfigService:
         daily_quota: int | None,
         concurrency: int | None,
         user_id: int,
+        stock_push_lag_seconds: int | None = None,
     ) -> PlatformRateLimit:
+        code = platform_code.strip().lower()
+        if stock_push_lag_seconds is None:
+            existing = await self.repo.get_by_platform(code)
+            if existing is not None:
+                stock_push_lag_seconds = existing.stock_push_lag_seconds
         code, quota = parse_quota(
             platform_code=platform_code,
             dimension=dimension,
@@ -140,6 +160,7 @@ class RateLimitConfigService:
             batch_limit=batch_limit,
             daily_quota=daily_quota,
             concurrency=concurrency,
+            stock_push_lag_seconds=stock_push_lag_seconds,
         )
         return await self.repo.save(
             platform_code=code,
@@ -149,6 +170,7 @@ class RateLimitConfigService:
             batch_limit=quota.batch_limit,
             concurrency=quota.concurrency,
             daily_quota=quota.daily_quota,
+            stock_push_lag_seconds=quota.stock_push_lag_seconds or quota_for(code).stock_push_lag_seconds,
             user_id=user_id,
         )
 

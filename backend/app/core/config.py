@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     sync_order_overlap_seconds: int = 300
     sync_order_initial_lookback_seconds: int = 86400
     sync_order_interval_seconds: int = 60
+    # 库存滞后降 0 的巡检间隔。阈值本身在 platform_rate_limit.stock_push_lag_seconds。
+    stock_push_sweep_seconds: int = 60
     sync_order_max_pages: int = 20
     # Webhook（PRD 10.5）：单平台每秒 100 次、事件 ID 保留 24 小时。空 CIDR 表示平台还没给来源网段。
     webhook_qps: int = 100

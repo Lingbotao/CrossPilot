@@ -48,6 +48,8 @@ class PlatformRateLimit(Base, PKMixin, AuditMixin):
     batch_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     concurrency: Mapped[int | None] = mapped_column(Integer, nullable=True)
     daily_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 库存回传滞后阈值。没配行时用 quotas.DEFAULT_STOCK_PUSH_LAG_SECONDS，不在推送服务里写死。
+    stock_push_lag_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=600, server_default="600")
 
     __table_args__ = (
         UniqueConstraint("platform_code", name="uq_platform_rate_limit_platform_code"),
@@ -60,6 +62,7 @@ class PlatformRateLimit(Base, PKMixin, AuditMixin):
         CheckConstraint("batch_limit > 0", name="batch_limit"),
         CheckConstraint("concurrency IS NULL OR concurrency > 0", name="concurrency"),
         CheckConstraint("daily_quota IS NULL OR daily_quota > 0", name="daily_quota"),
+        CheckConstraint("stock_push_lag_seconds > 0", name="stock_push_lag_seconds"),
     )
 
 

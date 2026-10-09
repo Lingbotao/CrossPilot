@@ -217,6 +217,10 @@ class OrderDeskService:
         elif action == "refund":
             await self._move_order(order, UnifiedStatus.REFUNDED, user_id, remark="退款完成")
             row.restock_status = restock_after_refund(restock_flag=row.restock_flag)
+            if row.restock_flag:
+                from app.services.inventory import InventoryService
+
+                await InventoryService(self.session).receive_return(row, actor_id=user_id)
         row.status = nxt
         row.updated_by = user_id
         await self.session.flush()

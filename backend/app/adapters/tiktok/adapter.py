@@ -11,6 +11,7 @@ from urllib.parse import quote
 from app.adapters.base import (
     BatchResult,
     CredentialView,
+    InventoryUpdate,
     PageResult,
     PlatformAdapter,
     PriceUpdate,
@@ -23,7 +24,7 @@ from app.adapters.base import (
     WebhookEvent,
     WebhookKind,
 )
-from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices
+from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
 from app.adapters.oauth_parse import tiktok_order, token_bundle
 from app.adapters.quotas import quota_for
@@ -182,6 +183,14 @@ class TikTokAdapter(PlatformAdapter):
             self.transport,
             cred,
             url=f"{_API_HOST}/product/202309/update_price",
+            items=items,
+        )
+
+    async def update_inventory(self, cred: CredentialView, items: list[InventoryUpdate]) -> BatchResult:
+        return await update_remote_inventory(
+            self.transport,
+            cred,
+            url=f"{_API_HOST}/product/202309/update_inventory",
             items=items,
         )
 

@@ -60,7 +60,7 @@ class FixtureTransport:
                 "platform_product_id": f"fixture-{platform}-{shop}-{sku}",
                 "platform_sku_id": f"fixture-sku-{platform}-{shop}-{sku}",
             }
-        if url.endswith("/update_price"):
+        if url.endswith("/update_price") or url.endswith("/update_inventory"):
             items = body.get("items")
             count = len(items) if isinstance(items, list) else 0
             return 200, {"succeeded": count, "failed": 0}

@@ -249,6 +249,9 @@ class DbShipBook:
             attempt=attempt,
             operator_id=self.operator_id,
         )
+        from app.services.inventory import InventoryService
+
+        await InventoryService(self.session).ship_order(order.id)
 
     async def commit_failure(
         self,

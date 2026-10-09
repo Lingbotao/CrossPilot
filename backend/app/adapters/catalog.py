@@ -7,7 +7,15 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
-from app.adapters.base import BatchResult, CredentialView, PriceUpdate, PublishResult, RemoteListing, UnifiedProduct
+from app.adapters.base import (
+    BatchResult,
+    CredentialView,
+    InventoryUpdate,
+    PriceUpdate,
+    PublishResult,
+    RemoteListing,
+    UnifiedProduct,
+)
 from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.transport import PlatformTransport, use_fixture_transport
 
@@ -78,6 +86,32 @@ async def update_listing_prices(
     return BatchResult(succeeded=succeeded, failed=failed, raw=body)
 
 
+async def update_remote_inventory(
+    transport: PlatformTransport,
+    cred: CredentialView,
+    *,
+    url: str,
+    items: list[InventoryUpdate],
+) -> BatchResult:
+    """各平台只负责自己的 URL。数量是整数可用库存。"""
+
+    _not_live(cred.platform)
+    _status, body = await transport.request(
+        "POST",
+        url,
+        json_body={
+            "access_token": cred.access_token,
+            "items": [{"platform_sku_id": item.platform_sku_id, "available": item.available} for item in items],
+        },
+        platform=cred.platform,
+    )
+    succeeded = body.get("succeeded")
+    failed = body.get("failed")
+    if not isinstance(succeeded, int) or not isinstance(failed, int):
+        raise AdapterError("库存回传响应不完整", platform=cred.platform, decision=RetryDecision.FAIL_FAST)
+    return BatchResult(succeeded=succeeded, failed=failed, raw=body)
+
+
 async def fetch_remote_listing(
     transport: PlatformTransport,
     cred: CredentialView,
@@ -112,4 +146,4 @@ async def fetch_remote_listing(
     return RemoteListing(price=price, currency=currency.upper())
 
 
-__all__ = ["fetch_remote_listing", "publish_listing", "update_listing_prices"]
+__all__ = ["fetch_remote_listing", "publish_listing", "update_listing_prices", "update_remote_inventory"]

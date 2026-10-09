@@ -162,6 +162,18 @@ class ListingRepository(BaseRepository[Listing]):
         stmt = self.base_select().where(Listing.status == "LINKED").order_by(Listing.id.asc()).limit(limit)
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_linked_for_sku(self, sku_id: int) -> list[Listing]:
+        stmt = (
+            self.base_select()
+            .where(
+                Listing.sku_id == sku_id,
+                Listing.status == "LINKED",
+                Listing.platform_sku_id.is_not(None),
+            )
+            .order_by(Listing.id.asc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def tenant_ids_with_linked(self) -> list[int]:
         """系统巡检用。显式跳过租户过滤，调用方再按租户逐个进入上下文。"""
 

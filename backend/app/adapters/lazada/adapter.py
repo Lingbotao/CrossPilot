@@ -11,6 +11,7 @@ from urllib.parse import quote
 from app.adapters.base import (
     BatchResult,
     CredentialView,
+    InventoryUpdate,
     PageResult,
     PlatformAdapter,
     PriceUpdate,
@@ -23,7 +24,7 @@ from app.adapters.base import (
     WebhookEvent,
     WebhookKind,
 )
-from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices
+from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.oauth_parse import lazada_order, token_bundle
@@ -201,6 +202,10 @@ class LazadaAdapter(PlatformAdapter):
     async def update_price(self, cred: CredentialView, items: list[PriceUpdate]) -> BatchResult:
         host = _lazada_host(self.platform, cred)
         return await update_listing_prices(self.transport, cred, url=f"{host}/product/update_price", items=items)
+
+    async def update_inventory(self, cred: CredentialView, items: list[InventoryUpdate]) -> BatchResult:
+        host = _lazada_host(self.platform, cred)
+        return await update_remote_inventory(self.transport, cred, url=f"{host}/product/update_inventory", items=items)
 
     async def fetch_listing(
         self,

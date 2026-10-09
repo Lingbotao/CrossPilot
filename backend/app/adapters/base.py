@@ -120,6 +120,8 @@ class RateLimitSpec:
     batch_limit: int
     daily_quota: int | None = None
     concurrency: int | None = None
+    # 与 quotas.DEFAULT_STOCK_PUSH_LAG_SECONDS 一致。业务推送读取配置行，不读这个默认值。
+    stock_push_lag_seconds: int = 600
 
 
 @dataclass(frozen=True, slots=True)

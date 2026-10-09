@@ -26,6 +26,10 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ExceptionsPage, OrdersPage, ToShipPage } from '@/pages/orders/OrdersPage';
 import { ReturnsPage } from '@/pages/orders/ReturnsPage';
 import { OrderSettingsPage } from '@/pages/orders/SettingsPage';
+import { FlowsPage } from '@/pages/inventory/FlowsPage';
+import { OverviewPage } from '@/pages/inventory/OverviewPage';
+import { ReplenishmentPage } from '@/pages/inventory/ReplenishmentPage';
+import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
 import { CategoryTemplatesPage } from '@/pages/products/CategoryTemplatesPage';
 import { ImagesPage } from '@/pages/products/ImagesPage';
 import { ListingsPage } from '@/pages/products/ListingsPage';
@@ -211,7 +215,67 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     icon: <InboxOutlined />,
     permission: Perm.INVENTORY_READ,
     milestone: 'M3（Week 6–7）',
-    delivered: false,
+    delivered: true,
+    children: [
+      {
+        key: 'inventory-overview',
+        path: '/inventory',
+        label: zhCN.menu.inventoryOverview,
+        icon: null,
+        permission: Perm.INVENTORY_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: OverviewPage,
+      },
+      {
+        key: 'inventory-warehouses',
+        path: '/inventory/warehouses',
+        label: zhCN.menu.inventoryWarehouses,
+        icon: null,
+        permission: Perm.INVENTORY_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: WarehousesPage,
+      },
+      {
+        key: 'inventory-flows',
+        path: '/inventory/flows',
+        label: zhCN.menu.inventoryFlows,
+        icon: null,
+        permission: Perm.INVENTORY_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: FlowsPage,
+      },
+      {
+        key: 'inventory-replenishment',
+        path: '/inventory/replenishment',
+        label: zhCN.menu.inventoryReplenishment,
+        icon: null,
+        permission: Perm.INVENTORY_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: true,
+        component: ReplenishmentPage,
+      },
+      {
+        key: 'inventory-transfers',
+        path: '/inventory/transfers',
+        label: zhCN.menu.inventoryTransfers,
+        icon: null,
+        permission: Perm.INVENTORY_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: false,
+      },
+      {
+        key: 'inventory-stocktaking',
+        path: '/inventory/stocktaking',
+        label: zhCN.menu.inventoryStocktaking,
+        icon: null,
+        permission: Perm.INVENTORY_READ,
+        milestone: 'M3（Week 6–7）',
+        delivered: false,
+      },
+    ],
   },
   {
     key: 'compliance',

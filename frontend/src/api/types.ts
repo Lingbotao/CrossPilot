@@ -94,6 +94,7 @@ export const ErrorCode = {
   INVENTORY_INSUFFICIENT: 60001,
   INVENTORY_SYNC_FAILED: 60002,
   INVENTORY_CONFLICT: 60003,
+  WAREHOUSE_CODE_DUPLICATED: 60004,
 
   // 70xxx 财务
   EXCHANGE_RATE_MISSING: 70001,
@@ -474,6 +475,7 @@ export interface PlatformRateLimit {
   batch_limit: number;
   daily_quota: number | null;
   concurrency: number | null;
+  stock_push_lag_seconds: number;
   source: RateLimitSource;
   updated_at: string | null;
 }
@@ -1158,4 +1160,111 @@ export interface SensitiveTermWrite {
   lang: string;
   keyword: string;
   suggest_replacement?: string | null;
+}
+
+export type WarehouseType = 'LOCAL' | 'OVERSEAS' | 'FBA' | 'PLATFORM';
+export type InventoryAdjustKind = 'INBOUND' | 'OUTBOUND' | 'TO_DEFECTIVE' | 'ADJUST';
+export type InventoryPushStatus = 'SUCCESS' | 'FAILED' | 'LAGGED_ZERO';
+
+export interface WarehouseView {
+  id: string;
+  name: string;
+  warehouse_type: WarehouseType;
+  country: string;
+  address: string;
+  external_code: string | null;
+  is_default: boolean;
+}
+
+export interface WarehouseWrite {
+  name: string;
+  warehouse_type: WarehouseType;
+  country: string;
+  address?: string;
+  external_code?: string | null;
+  is_default?: boolean;
+}
+
+export interface InventoryView {
+  id: string;
+  sku_id: string;
+  sku_code: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  warehouse_type: WarehouseType;
+  available: number;
+  occupied: number;
+  in_transit: number;
+  defective: number;
+  safe_stock: number;
+  sellable: number;
+  version: number;
+}
+
+export interface InventoryAdjustWrite {
+  sku_id: string;
+  warehouse_id: string;
+  kind: InventoryAdjustKind;
+  quantity: number;
+  ref_type?: string;
+  ref_id?: string | null;
+}
+
+export interface InventoryFlowView {
+  id: string;
+  created_at: string;
+  sku_id: string;
+  warehouse_id: string;
+  flow_type: string;
+  quantity: number;
+  ref_type: string;
+  ref_id: string | null;
+  before_qty: number;
+  after_qty: number;
+}
+
+export interface InventoryPushLogView {
+  id: string;
+  shop_id: string;
+  sku_id: string;
+  platform_code: string;
+  quantity: number;
+  status: InventoryPushStatus;
+  retry_count: number;
+  message: string;
+  created_at: string;
+}
+
+export interface SafetyStockView {
+  id: string;
+  sku_id: string;
+  sku_code: string;
+  platform_code: string;
+  quantity: number;
+  lead_time_days: number;
+  cover_days: number;
+}
+
+export interface SafetyStockWrite {
+  sku_id: string;
+  platform_code: string;
+  quantity: number;
+  lead_time_days: number;
+  cover_days: number;
+}
+
+export interface ReplenishmentView {
+  sku_id: string;
+  sku_code: string;
+  platform_code: string;
+  safety: number;
+  lead_time_days: number;
+  cover_days: number;
+  sold: number;
+  window_days: number;
+  movable: number;
+  in_transit: number;
+  daily_sales: string;
+  suggested_qty: number;
+  order_on: string | null;
 }

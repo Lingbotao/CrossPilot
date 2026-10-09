@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from app.adapters.base import RateLimitSpec
 
+# 库存回传滞后。PRD 示例是 10 分钟。改线上值走 platform_rate_limit，不要改推送服务。
+DEFAULT_STOCK_PUSH_LAG_SECONDS = 600
+
 # qps / burst / 维度 / 单次批量上限
 _DEFAULTS: dict[str, tuple[int, int, str, int]] = {
     "amazon": (1, 5, "shop", 1),
@@ -19,7 +22,13 @@ _DEFAULTS: dict[str, tuple[int, int, str, int]] = {
 
 def quota_for(platform: str) -> RateLimitSpec:
     qps, burst, dimension, batch_limit = _DEFAULTS[platform.lower()]
-    return RateLimitSpec(qps=qps, burst=burst, dimension=dimension, batch_limit=batch_limit)
+    return RateLimitSpec(
+        qps=qps,
+        burst=burst,
+        dimension=dimension,
+        batch_limit=batch_limit,
+        stock_push_lag_seconds=DEFAULT_STOCK_PUSH_LAG_SECONDS,
+    )
 
 
-__all__ = ["quota_for"]
+__all__ = ["DEFAULT_STOCK_PUSH_LAG_SECONDS", "quota_for"]

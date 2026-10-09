@@ -32,6 +32,14 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
+from app.models.inventory import (
+    Inventory,
+    InventoryFlow,
+    InventoryHold,
+    InventoryPushLog,
+    PlatformSafetyStock,
+    Warehouse,
+)
 from app.models.listing import CategoryMapping, Listing, ListingBatch, ListingBatchItem, ListingDiff
 from app.models.locale import GlossaryTerm, ListingContent, SensitiveTerm
 from app.models.order import (
@@ -93,6 +101,13 @@ __all__ = [
     "ListingContent",
     "GlossaryTerm",
     "SensitiveTerm",
+    # 库存与仓储域（批次 4）
+    "Warehouse",
+    "Inventory",
+    "InventoryFlow",
+    "InventoryHold",
+    "PlatformSafetyStock",
+    "InventoryPushLog",
     # 枚举
     "TenantPlan",
     "TenantStatus",

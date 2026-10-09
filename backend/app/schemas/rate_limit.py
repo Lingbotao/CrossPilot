@@ -18,6 +18,7 @@ class UpsertRateLimitRequest(BaseModel):
     batch_limit: int = Field(ge=1, le=1_000_000)
     daily_quota: int | None = Field(default=None, ge=1, le=100_000_000)
     concurrency: int | None = Field(default=None, ge=1, le=10_000)
+    stock_push_lag_seconds: int | None = Field(default=None, ge=1, le=86_400)
 
     @field_validator("platform_code", "dimension")
     @classmethod
@@ -37,6 +38,7 @@ class RateLimitResponse(BaseModel):
     batch_limit: int
     daily_quota: int | None
     concurrency: int | None
+    stock_push_lag_seconds: int
     source: RateLimitSource
     updated_at: datetime | None
 
