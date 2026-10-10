@@ -26,6 +26,7 @@ from app.models.compliance import (
     TaxRegistration,
 )
 from app.models.config import PlatformRateLimit, PlatformStatusMapping
+from app.models.dashboard import DashboardInventoryDaily, DashboardShopDaily
 from app.models.enums import (
     AuditAction,
     DataScopeType,
@@ -166,6 +167,8 @@ __all__ = [
     "AdCampaign",
     "AdMetricDaily",
     "AdKeywordMetric",
+    "DashboardShopDaily",
+    "DashboardInventoryDaily",
     # 枚举
     "TenantPlan",
     "TenantStatus",

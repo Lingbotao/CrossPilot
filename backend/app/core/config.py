@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     ads_sync_lookback_days: int = 7
     ads_sync_max_days: int = 31
     ads_sync_max_pages: int = 20
+    # 看板汇总。刷新间隔对应预聚合 5 分钟；呆滞天数和排行条数走配置。
+    dashboard_refresh_seconds: int = 300
+    dashboard_lookback_days: int = 35
+    dashboard_max_days: int = 366
+    dashboard_stale_days: int = 90
+    dashboard_rank_limit: int = 20
     # Webhook（PRD 10.5）：单平台每秒 100 次、事件 ID 保留 24 小时。空 CIDR 表示平台还没给来源网段。
     webhook_qps: int = 100
     webhook_event_ttl_seconds: int = 86400

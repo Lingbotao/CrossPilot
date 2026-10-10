@@ -38,6 +38,7 @@ celery_app = Celery(
         "app.tasks.sync",
         "app.tasks.batch",
         "app.tasks.report",
+        "app.tasks.dashboard",
         "app.tasks.inventory",
         "app.tasks.compliance",
         "app.tasks.finance",
@@ -104,6 +105,11 @@ celery_app.conf.beat_schedule = {
     "beat-scan-ads": {
         "task": "sync.scan_ads",
         "schedule": timedelta(seconds=settings.ads_sync_interval_seconds),
+    },
+    # 看板预聚合。间隔来自 DASHBOARD_REFRESH_SECONDS，默认 5 分钟。
+    "beat-scan-dashboard": {
+        "task": "dashboard.scan_rebuild",
+        "schedule": timedelta(seconds=settings.dashboard_refresh_seconds),
     },
 }
 

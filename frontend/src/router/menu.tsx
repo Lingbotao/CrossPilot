@@ -8,6 +8,7 @@
 import {
   AppstoreOutlined,
   AuditOutlined,
+  BarChartOutlined,
   DashboardOutlined,
   FundOutlined,
   GlobalOutlined,
@@ -50,6 +51,14 @@ import { LocalePage } from '@/pages/products/LocalePage';
 import { ProductDetailPage } from '@/pages/products/ProductDetailPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { PublishPage } from '@/pages/products/PublishPage';
+import { AnalyticsAdsPage } from '@/pages/analytics/AnalyticsAdsPage';
+import { AnalyticsCostsPage } from '@/pages/analytics/AnalyticsCostsPage';
+import { AnalyticsFulfillmentPage } from '@/pages/analytics/AnalyticsFulfillmentPage';
+import { AnalyticsInventoryPage } from '@/pages/analytics/AnalyticsInventoryPage';
+import { AnalyticsOverviewPage } from '@/pages/analytics/AnalyticsOverviewPage';
+import { AnalyticsPlatformsPage } from '@/pages/analytics/AnalyticsPlatformsPage';
+import { AnalyticsRankingPage } from '@/pages/analytics/AnalyticsRankingPage';
+import { AnalyticsTrendsPage } from '@/pages/analytics/AnalyticsTrendsPage';
 import { AdsCampaignsPage } from '@/pages/ads/AdsCampaignsPage';
 import { AdsKeywordsPage } from '@/pages/ads/AdsKeywordsPage';
 import { AdsLossPage } from '@/pages/ads/AdsLossPage';
@@ -82,12 +91,103 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
   {
     key: 'dashboard',
     path: '/dashboard',
-    label: zhCN.menu.dashboard,
+    label: zhCN.menu.workbench,
     icon: <DashboardOutlined />,
     permission: Perm.DASHBOARD_READ,
-    milestone: 'M5（Week 10–11）',
+    milestone: 'M0',
     delivered: true,
     component: DashboardPage,
+  },
+  {
+    key: 'analytics',
+    path: '/analytics',
+    label: zhCN.menu.dashboard,
+    icon: <BarChartOutlined />,
+    permission: Perm.DASHBOARD_READ,
+    milestone: 'M5（Week 10–11）',
+    delivered: false,
+    children: [
+      {
+        key: 'analytics-overview',
+        path: '/analytics/overview',
+        label: zhCN.menu.analyticsOverview,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsOverviewPage,
+      },
+      {
+        key: 'analytics-platforms',
+        path: '/analytics/platforms',
+        label: zhCN.menu.analyticsPlatforms,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsPlatformsPage,
+      },
+      {
+        key: 'analytics-ranking',
+        path: '/analytics/ranking',
+        label: zhCN.menu.analyticsRanking,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsRankingPage,
+      },
+      {
+        key: 'analytics-trends',
+        path: '/analytics/trends',
+        label: zhCN.menu.analyticsTrends,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsTrendsPage,
+      },
+      {
+        key: 'analytics-costs',
+        path: '/analytics/costs',
+        label: zhCN.menu.analyticsCosts,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsCostsPage,
+      },
+      {
+        key: 'analytics-inventory',
+        path: '/analytics/inventory',
+        label: zhCN.menu.analyticsInventory,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsInventoryPage,
+      },
+      {
+        key: 'analytics-ads',
+        path: '/analytics/ads',
+        label: zhCN.menu.analyticsAds,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsAdsPage,
+      },
+      {
+        key: 'analytics-fulfillment',
+        path: '/analytics/fulfillment',
+        label: zhCN.menu.analyticsFulfillment,
+        icon: null,
+        permission: Perm.DASHBOARD_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AnalyticsFulfillmentPage,
+      },
+    ],
   },
   {
     key: 'shops',

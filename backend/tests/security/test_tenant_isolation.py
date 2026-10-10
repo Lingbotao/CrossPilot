@@ -2057,6 +2057,56 @@ class TestAdsIsolation:
                 _run(_delete(table, row_a))
 
 
+class TestDashboardIsolation:
+    def test_tenant_cannot_read_another_tenants_dashboard(self, migrated: None) -> None:
+        base = 973000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        day_a, day_b = base + 2, base + 3
+        stock_a, stock_b = base + 4, base + 5
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) VALUES (:id, :tid, 'amazon', 'US', '看板店', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"dash-{shop_id}"},
+                    )
+                for row_id, tenant_id, shop_id in ((day_a, TENANT_A, shop_a), (day_b, TENANT_B, shop_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO dashboard_shop_daily (id, tenant_id, stat_date, shop_id, platform_code, "
+                            "site_code, currency, book_currency, order_count, gmv, profit_complete, on_time, late, "
+                            "return_count, ad_loss_count, lines) VALUES (:id, :tid, '2026-10-09', :shop, 'amazon', "
+                            "'US', 'USD', 'CNY', 1, 10, false, 1, 0, 0, 0, '[]'::jsonb)"
+                        ),
+                        {"id": row_id, "tid": tenant_id, "shop": shop_id},
+                    )
+                for row_id, tenant_id in ((stock_a, TENANT_A), (stock_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO dashboard_inventory_daily (id, tenant_id, stat_date, on_hand_qty, "
+                            "stockout_sku_count, below_safe_sku_count, stale_sku_count, stale_amounts) "
+                            "VALUES (:id, :tid, '2026-10-09', 1, 0, 0, 0, '[]'::jsonb)"
+                        ),
+                        {"id": row_id, "tid": tenant_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        for table, row_a, row_b in (
+            ("dashboard_shop_daily", day_a, day_b),
+            ("dashboard_inventory_daily", stock_a, stock_b),
+        ):
+            assert _run(_visible(table, row_a, row_b, TENANT_A)) == {row_a}
+            assert _run(_visible(table, row_a, row_b, TENANT_B)) == {row_b}
+
+
 async def _visible(table: str, row_a: int, row_b: int, tenant_id: int) -> set[int]:
     engine, factory = _app_session()
     async with factory() as session:

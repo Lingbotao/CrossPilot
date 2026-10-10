@@ -27,6 +27,7 @@ BEAT_REFRESH_CREDENTIALS = "beat:refresh_credentials"
 BEAT_SCAN_DEAD_LETTER = "beat:scan_dead_letter"
 BEAT_SCAN_LISTING_DIFFS = "beat:scan_listing_diffs"
 BEAT_SCAN_ADS = "beat:scan_ads"
+BEAT_SCAN_DASHBOARD = "beat:scan_dashboard"
 
 
 class LockStatus(StrEnum):

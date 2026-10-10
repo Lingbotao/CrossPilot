@@ -2126,3 +2126,150 @@ export interface AdsQuery {
   limit?: number;
   only_negative?: boolean;
 }
+
+export interface DashboardQuery {
+  date_from: string;
+  date_to: string;
+  shop_id?: string;
+  platform_code?: string;
+}
+
+export interface DashboardMoneyView {
+  currency: string;
+  book_currency: string;
+  order_count: number;
+  gmv: string;
+  book_gmv: string | null;
+  net_profit: string | null;
+  book_net_profit: string | null;
+  net_margin: string | null;
+  gmv_change: string | null;
+  gmv_yoy: string | null;
+  profit_change: string | null;
+  profit_yoy: string | null;
+  ad_spend: string | null;
+  ad_sales: string | null;
+  acos: string | null;
+  roas: string | null;
+  profit_roi: string | null;
+  roi_formula: string;
+  ad_loss_count: number;
+}
+
+export interface DashboardDayView {
+  stat_date: string;
+  platform_code: string;
+  currency: string;
+  order_count: number;
+  gmv: string;
+  net_profit: string | null;
+}
+
+export interface DashboardPromoView {
+  stat_date: string;
+  code: string;
+}
+
+export interface DashboardOverviewView {
+  order_count: number;
+  order_change: string | null;
+  order_yoy: string | null;
+  on_time_rate: string | null;
+  return_rate: string | null;
+  currencies: DashboardMoneyView[];
+  days: DashboardDayView[];
+  promos: DashboardPromoView[];
+}
+
+export interface DashboardPlatformView {
+  platform_code: string;
+  site_code: string;
+  currency: string;
+  book_currency: string;
+  order_count: number;
+  gmv: string;
+  book_gmv: string | null;
+  net_profit: string | null;
+  on_time_rate: string | null;
+  return_rate: string | null;
+}
+
+export interface DashboardTrendView {
+  days: DashboardDayView[];
+  promos: DashboardPromoView[];
+}
+
+export interface DashboardSkuRankView {
+  sku_id: string;
+  spu_id: string;
+  sku_code: string;
+  currency: string;
+  book_currency: string;
+  quantity: number;
+  revenue: string;
+  net_profit: string | null;
+  book_net_profit: string | null;
+  net_margin: string | null;
+  loss: boolean;
+}
+
+export interface DashboardRankingView {
+  top: DashboardSkuRankView[];
+  bottom: DashboardSkuRankView[];
+  loss: DashboardSkuRankView[];
+  incomplete_count: number;
+}
+
+export interface DashboardCostLineView {
+  code: string;
+  currency: string;
+  amount: string | null;
+  share: string | null;
+  complete: boolean;
+}
+
+export interface DashboardStaleAmountView {
+  currency: string;
+  amount: string | null;
+  complete: boolean;
+}
+
+export interface DashboardInventoryView {
+  as_of: string | null;
+  on_hand_qty: number;
+  stockout_sku_count: number;
+  below_safe_sku_count: number;
+  stale_sku_count: number;
+  sold_qty: number;
+  turnover_days: string | null;
+  turnover_formula: string;
+  stale_amounts: DashboardStaleAmountView[];
+}
+
+export interface DashboardAdsRoiView {
+  currency: string;
+  ad_spend: string | null;
+  ad_sales: string | null;
+  acos: string | null;
+  roas: string | null;
+  profit_roi: string | null;
+  roi_formula: string;
+  ad_loss_count: number;
+}
+
+export interface DashboardFulfillmentView {
+  platform_code: string;
+  site_code: string;
+  currency: string;
+  order_count: number;
+  on_time: number;
+  late: number;
+  on_time_rate: string | null;
+  return_count: number;
+  return_rate: string | null;
+}
+
+export interface DashboardRebuildView {
+  shop_days: number;
+  inventory_as_of: string;
+}
