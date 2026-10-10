@@ -19,6 +19,8 @@ from app.schemas.compliance import (
     CertRequirementView,
     ComplianceAlertView,
     ComplianceReportView,
+    TaxRegistrationCreate,
+    TaxRegistrationView,
     TaxRuleCreate,
     TaxRuleView,
     clean_tax_type,
@@ -28,6 +30,7 @@ from app.schemas.locale import clean_market
 from app.services.certificate import CertificateService
 from app.services.compliance_alert import ComplianceAlertService
 from app.services.compliance_check import ComplianceCheckService
+from app.services.tax_registration import TaxRegistrationService
 from app.services.tax_rule import TaxRuleService
 
 router = APIRouter(tags=["合规"])
@@ -255,6 +258,54 @@ async def retire_cert_requirement(
         actor_id=identity.user.id,
     )
     return ok(data, message="认证要求已停用")
+
+
+@router.get("/tax-registrations", response_model=ApiResponse[list[TaxRegistrationView]], summary="税务注册")
+async def list_tax_registrations(
+    identity: ComplianceReader,
+    session: DbSession,
+    country: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> ApiResponse[list[TaxRegistrationView]]:
+    del identity
+    data = await TaxRegistrationService(session).list_rows(country=_optional_market(country), limit=limit)
+    return ok(data)
+
+
+@router.post("/tax-registrations", response_model=ApiResponse[TaxRegistrationView], summary="登记税务注册")
+async def create_tax_registration(
+    payload: TaxRegistrationCreate,
+    identity: ComplianceWriter,
+    session: DbSession,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[TaxRegistrationView]:
+    data = await TaxRegistrationService(session).create(
+        payload,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+        idempotency_key=idempotency_key,
+    )
+    return ok(data, message="税务注册已保存")
+
+
+@router.post(
+    "/tax-registrations/{registration_id}/retire",
+    response_model=ApiResponse[TaxRegistrationView],
+    summary="停用税务注册",
+)
+async def retire_tax_registration(
+    registration_id: int,
+    identity: ComplianceWriter,
+    session: DbSession,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[TaxRegistrationView]:
+    del idempotency_key
+    data = await TaxRegistrationService(session).retire(
+        registration_id,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+    )
+    return ok(data, message="税务注册已停用")
 
 
 @router.get("/compliance-report", response_model=ApiResponse[ComplianceReportView], summary="合规体检")

@@ -23,10 +23,11 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import AuditMixin, Base, PKMixin, TenantMixin
+from app.db.base import AuditMixin, Base, PKMixin, SoftDeleteMixin, TenantMixin
 from app.models.locale import CONTENT_MARKETS
 
 TAX_TYPES: tuple[str, ...] = (
@@ -63,6 +64,7 @@ NOTICE_CERT_EXPIRY = "CERT_EXPIRY"
 NOTICE_KINDS: tuple[str, ...] = (NOTICE_TAX_EFFECTIVE, NOTICE_CERT_EXPIRY)
 NOTICE_LEVELS: tuple[str, ...] = ("D7", "D30", "D60")
 ALERT_EXPIRED = "EXPIRED"
+FILING_CYCLES: tuple[str, ...] = ("MONTHLY", "QUARTERLY", "ANNUAL")
 
 _MARKET_SQL = ", ".join(f"'{item}'" for item in CONTENT_MARKETS)
 _TAX_TYPE_SQL = ", ".join(f"'{item}'" for item in TAX_TYPES)
@@ -70,6 +72,7 @@ _TAX_STATUS_SQL = ", ".join(f"'{item}'" for item in TAX_RULE_STATUSES)
 _CERT_TYPE_SQL = ", ".join(f"'{item}'" for item in CERT_TYPES)
 _NOTICE_KIND_SQL = ", ".join(f"'{item}'" for item in NOTICE_KINDS)
 _NOTICE_LEVEL_SQL = ", ".join(f"'{item}'" for item in NOTICE_LEVELS)
+_FILING_SQL = ", ".join(f"'{item}'" for item in FILING_CYCLES)
 
 
 def _sql_in(name: str, sql: str) -> CheckConstraint:
@@ -199,6 +202,49 @@ class CertRequirementRule(Base, PKMixin, TenantMixin, AuditMixin):
     )
 
 
+class TaxRegistration(Base, PKMixin, TenantMixin, AuditMixin, SoftDeleteMixin):
+    """租户在某个市场的税务注册。停用走软删除，同一税号可以重新登记。"""
+
+    __tablename__ = "tax_registration"
+
+    country: Mapped[str] = mapped_column(String(2), nullable=False)
+    tax_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    tax_no: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity: Mapped[str] = mapped_column(String(256), nullable=False)
+    agent: Mapped[str] = mapped_column(String(256), nullable=False, default="", server_default="")
+    filing_cycle: Mapped[str] = mapped_column(String(16), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    __table_args__ = (
+        _sql_in("country", _MARKET_SQL),
+        _sql_in("tax_type", _TAX_TYPE_SQL),
+        _sql_in("filing_cycle", _FILING_SQL),
+        CheckConstraint("char_length(btrim(tax_no)) > 0", name="tax_no"),
+        CheckConstraint("char_length(btrim(entity)) > 0", name="entity"),
+        CheckConstraint(
+            "idempotency_key IS NULL OR char_length(btrim(idempotency_key)) > 0",
+            name="idempotency_key",
+        ),
+        Index(
+            "uq_tax_registration_active",
+            "tenant_id",
+            "country",
+            "tax_type",
+            "tax_no",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index(
+            "uq_tax_registration_idempotency",
+            "tenant_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL AND deleted_at IS NULL"),
+        ),
+        Index("ix_tax_registration_tenant_id_country", "tenant_id", "country"),
+    )
+
+
 class ComplianceNotice(Base, PKMixin, TenantMixin, AuditMixin):
     """同一提醒窗口只记一行，用来避免重复发信，也作为站内信。"""
 
@@ -230,6 +276,7 @@ class ComplianceNotice(Base, PKMixin, TenantMixin, AuditMixin):
 __all__ = [
     "ALERT_EXPIRED",
     "CERT_TYPES",
+    "FILING_CYCLES",
     "NOTICE_CERT_EXPIRY",
     "NOTICE_KINDS",
     "NOTICE_LEVELS",
@@ -244,4 +291,5 @@ __all__ = [
     "ComplianceCertificate",
     "ComplianceNotice",
     "CountryTaxRule",
+    "TaxRegistration",
 ]

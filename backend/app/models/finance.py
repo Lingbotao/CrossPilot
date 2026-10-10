@@ -16,6 +16,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -36,6 +37,10 @@ SETTLEMENT_BASIS = "SETTLEMENT"
 BOOK_BASIS = "BOOK"
 RATE_BASES: tuple[str, ...] = (ORDER_BASIS, SETTLEMENT_BASIS, BOOK_BASIS)
 _BASIS_SQL = ", ".join(f"'{item}'" for item in RATE_BASES)
+MATCHED = "MATCHED"
+UNMATCHED = "UNMATCHED"
+MATCH_STATUSES: tuple[str, ...] = (MATCHED, UNMATCHED)
+_MATCH_SQL = ", ".join(f"'{item}'" for item in MATCH_STATUSES)
 
 
 class ExchangeRate(Base, PKMixin, TenantMixin, AuditMixin):
@@ -129,11 +134,81 @@ class SkuProfitDaily(Base, TenantMixin):
     )
 
 
+class Settlement(Base, PKMixin, TenantMixin, AuditMixin):
+    """平台结算单。同一店铺的结算单号只留一份，重复导入拒绝覆盖。"""
+
+    __tablename__ = "settlement"
+
+    shop_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("shop.id"), nullable=False)
+    platform_settlement_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    line_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    matched_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    match_rate: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "shop_id",
+            "platform_settlement_id",
+            name="uq_settlement_platform_id",
+        ),
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_settlement_idempotency"),
+        CheckConstraint("period_end >= period_start", name="period"),
+        CheckConstraint("line_count >= 0 AND matched_count >= 0 AND matched_count <= line_count", name="counts"),
+        CheckConstraint("match_rate >= 0 AND match_rate <= 1", name="match_rate"),
+        CheckConstraint("char_length(btrim(platform_settlement_id)) > 0", name="platform_settlement_id"),
+        CheckConstraint("char_length(btrim(source)) > 0", name="source"),
+        CheckConstraint("char_length(currency) = 3", name="currency"),
+        CheckConstraint(
+            "idempotency_key IS NULL OR char_length(btrim(idempotency_key)) > 0",
+            name="idempotency_key",
+        ),
+        Index("ix_settlement_tenant_id_shop_id", "tenant_id", "shop_id"),
+    )
+
+
+class SettlementItem(Base, PKMixin, TenantMixin, AuditMixin):
+    """结算明细。未匹配订单的 order_id 留空，不编造订单。"""
+
+    __tablename__ = "settlement_item"
+
+    settlement_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("settlement.id"), nullable=False)
+    platform_order_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    order_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("sales_order.id"), nullable=True)
+    fee_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    match_status: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(f"match_status IN ({_MATCH_SQL})", name="match_status"),
+        CheckConstraint("char_length(btrim(platform_order_id)) > 0", name="platform_order_id"),
+        CheckConstraint("char_length(btrim(fee_type)) > 0", name="fee_type"),
+        CheckConstraint("char_length(currency) = 3", name="currency"),
+        CheckConstraint(
+            "(match_status = 'MATCHED' AND order_id IS NOT NULL) OR (match_status = 'UNMATCHED' AND order_id IS NULL)",
+            name="match_order",
+        ),
+        Index("ix_settlement_item_tenant_id_settlement_id", "tenant_id", "settlement_id"),
+    )
+
+
 __all__ = [
     "BOOK_BASIS",
     "ExchangeRate",
+    "MATCHED",
+    "MATCH_STATUSES",
     "ORDER_BASIS",
     "RATE_BASES",
     "SETTLEMENT_BASIS",
+    "Settlement",
+    "SettlementItem",
     "SkuProfitDaily",
+    "UNMATCHED",
 ]

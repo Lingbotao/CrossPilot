@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
-from app.models.compliance import CERT_TYPES, TAX_TYPES
+from app.models.compliance import CERT_TYPES, FILING_CYCLES, TAX_TYPES
 from app.schemas.common import money_to_str
 from app.schemas.listing import parse_id
 from app.schemas.locale import clean_market
@@ -303,6 +303,72 @@ def threshold_text(amount: Decimal | None) -> str | None:
     return money_to_str(amount)
 
 
+def clean_filing_cycle(value: object) -> str:
+    if not isinstance(value, str) or value.strip().upper() not in FILING_CYCLES:
+        raise ValueError("申报周期必须是月、季或年")
+    return value.strip().upper()
+
+
+class TaxRegistrationCreate(BaseModel):
+    country: str
+    tax_type: str
+    tax_no: str
+    entity: str
+    agent: str = ""
+    filing_cycle: str
+
+    @field_validator("country", mode="before")
+    @classmethod
+    def _country(cls, value: object) -> str:
+        return clean_market(value)
+
+    @field_validator("tax_type", mode="before")
+    @classmethod
+    def _tax_type(cls, value: object) -> str:
+        return clean_tax_type(value)
+
+    @field_validator("tax_no", mode="before")
+    @classmethod
+    def _tax_no(cls, value: object) -> str:
+        return _required_text(value, empty="税号必须填写", limit=64)
+
+    @field_validator("entity", mode="before")
+    @classmethod
+    def _entity(cls, value: object) -> str:
+        return _required_text(value, empty="注册主体必须填写", limit=256)
+
+    @field_validator("agent", mode="before")
+    @classmethod
+    def _agent(cls, value: object) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ValueError("代理必须是文本")
+        text = value.strip()
+        if len(text) > 256:
+            raise ValueError("不能超过 256 个字符")
+        return text
+
+    @field_validator("filing_cycle", mode="before")
+    @classmethod
+    def _cycle(cls, value: object) -> str:
+        return clean_filing_cycle(value)
+
+
+class TaxRegistrationView(BaseModel):
+    id: int
+    country: str
+    tax_type: str
+    tax_no: str
+    entity: str
+    agent: str
+    filing_cycle: str
+
+    @field_serializer("id")
+    def _id(self, value: int) -> str:
+        return _id_text(value)
+
+
 __all__ = [
     "CertGapView",
     "CertRequirementCreate",
@@ -313,10 +379,13 @@ __all__ = [
     "ComplianceAlertView",
     "ComplianceReportItem",
     "ComplianceReportView",
+    "TaxRegistrationCreate",
+    "TaxRegistrationView",
     "TaxRuleCreate",
     "TaxRuleView",
     "clean_cert_type",
     "clean_currency",
+    "clean_filing_cycle",
     "clean_hs_pattern",
     "clean_tax_type",
     "threshold_text",

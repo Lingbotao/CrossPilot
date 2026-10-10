@@ -10,7 +10,7 @@
 | 40xxx | 商品        | 40001 SKU 编码重复，40007 批次超过 500，40009 导入行错误 |
 | 50xxx | 订单        | 50001 订单不存在，50002 状态不允许该操作          |
 | 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60004 仓库编码冲突，60005 调拨仓库不合法 |
-| 70xxx | 财务        | 70001 汇率缺失，70002 对账不平，70004 费用区间重叠，70005 汇率已锁定，70006 汇率重叠 |
+| 70xxx | 财务        | 70001 汇率缺失，70002 对账不平，70004 费用区间重叠，70005 汇率已锁定，70006 汇率重叠，70007 结算文件无法解析 |
 | 80xxx | 合规        | 80001 缺失 HS 编码，80004 税率区间重叠，80006 认证附件不合法 |
 """
 
@@ -97,6 +97,7 @@ class ErrorCode(IntEnum):
     FEE_RULE_OVERLAP = 70004
     EXCHANGE_RATE_LOCKED = 70005
     EXCHANGE_RATE_OVERLAP = 70006
+    SETTLEMENT_FILE_INVALID = 70007
 
     # ---- 80xxx 合规 ----
     HS_CODE_MISSING = 80001
@@ -169,6 +170,7 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.FEE_RULE_OVERLAP: 409,
     ErrorCode.EXCHANGE_RATE_LOCKED: 409,
     ErrorCode.EXCHANGE_RATE_OVERLAP: 409,
+    ErrorCode.SETTLEMENT_FILE_INVALID: 400,
     ErrorCode.HS_CODE_MISSING: 422,
     ErrorCode.CERTIFICATE_EXPIRED: 409,
     ErrorCode.MARKET_RESTRICTED: 403,
@@ -311,6 +313,11 @@ class ExchangeRateLockedError(AppError):
 class ExchangeRateOverlapError(AppError):
     code = ErrorCode.EXCHANGE_RATE_OVERLAP
     message = "同一币对、口径和生效日已有汇率"
+
+
+class SettlementFileInvalidError(AppError):
+    code = ErrorCode.SETTLEMENT_FILE_INVALID
+    message = "结算文件无法解析"
 
 
 class HSCodeMissingError(AppError):

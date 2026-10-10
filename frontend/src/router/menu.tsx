@@ -35,8 +35,10 @@ import { WarehousesPage } from '@/pages/inventory/WarehousesPage';
 import { ExchangeRatesPage } from '@/pages/finance/ExchangeRatesPage';
 import { LandedCostPage } from '@/pages/finance/LandedCostPage';
 import { ProfitPage } from '@/pages/finance/ProfitPage';
+import { SettlementsPage } from '@/pages/finance/SettlementsPage';
 import { WaterfallPage } from '@/pages/finance/WaterfallPage';
 import { CertificatesPage } from '@/pages/compliance/CertificatesPage';
+import { TaxRegistrationsPage } from '@/pages/compliance/TaxRegistrationsPage';
 import { ReportPage } from '@/pages/compliance/ReportPage';
 import { HsCodesPage } from '@/pages/compliance/HsCodesPage';
 import { TaxRulesPage } from '@/pages/compliance/TaxRulesPage';
@@ -352,6 +354,16 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         delivered: true,
         component: CertificatesPage,
       },
+      {
+        key: 'compliance-tax-registration',
+        path: '/compliance/tax-registrations',
+        label: zhCN.menu.complianceTaxRegistration,
+        icon: null,
+        permission: Perm.COMPLIANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: true,
+        component: TaxRegistrationsPage,
+      },
     ],
   },
   {
@@ -411,6 +423,16 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         milestone: 'M4（Week 8–9）',
         delivered: true,
         component: WaterfallPage,
+      },
+      {
+        key: 'settlements',
+        path: '/finance/settlements',
+        label: zhCN.menu.settlements,
+        icon: null,
+        permission: Perm.FINANCE_READ,
+        milestone: 'M4（Week 8–9）',
+        delivered: true,
+        component: SettlementsPage,
       },
     ],
   },

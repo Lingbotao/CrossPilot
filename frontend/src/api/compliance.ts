@@ -13,6 +13,8 @@ import type {
   HsBindRequest,
   HsCodeHit,
   SpuHsBindingView,
+  TaxRegistrationCreate,
+  TaxRegistrationView,
   TaxRuleCreate,
   TaxRuleView,
 } from './types';
@@ -71,4 +73,15 @@ export const complianceApi = {
   alerts: () => api.get<ComplianceAlertView[]>('/compliance-alerts'),
 
   report: () => api.get<ComplianceReportView>('/compliance-report'),
+
+  taxRegistrations: (country?: string) =>
+    api.get<TaxRegistrationView[]>('/tax-registrations', { params: country ? { country } : {} }),
+
+  createTaxRegistration: (payload: TaxRegistrationCreate) =>
+    api.post<TaxRegistrationView>('/tax-registrations', payload, { idempotent: true }),
+
+  retireTaxRegistration: (registrationId: string) =>
+    api.post<TaxRegistrationView>(`/tax-registrations/${encodeURIComponent(registrationId)}/retire`, {}, {
+      idempotent: true,
+    }),
 };

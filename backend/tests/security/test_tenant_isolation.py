@@ -1721,6 +1721,65 @@ class TestComplianceConfigIsolation:
             ("(:id, :tid, :ref, :ref, CURRENT_DATE, 'USD', 'CNY', 10.000000, 1, CAST('[]' AS jsonb), false)"),
         )
 
+    def test_tenant_cannot_read_another_tenants_tax_registration(self, migrated: None) -> None:
+        _assert_hidden(
+            "tax_registration",
+            "id, tenant_id, country, tax_type, tax_no, entity, filing_cycle",
+            "(:id, :tid, 'US', 'VAT', :label, 'Entity', 'MONTHLY')",
+        )
+
+    def test_tenant_cannot_read_another_tenants_settlement(self, migrated: None) -> None:
+        base = 973000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        row_a, row_b = base + 2, base + 3
+        item_a, item_b = base + 4, base + 5
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id, row_id, item_id in (
+                    (shop_a, TENANT_A, row_a, item_a),
+                    (shop_b, TENANT_B, row_b, item_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, platform_shop_id, status) "
+                            "VALUES (:id, :tid, 'shopee', 'SG', :name, :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "name": f"s{shop_id}", "shop": f"seller-{shop_id}"},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO settlement ("
+                            "id, tenant_id, shop_id, platform_settlement_id, period_start, period_end, "
+                            "amount, currency, source, line_count, matched_count, match_rate"
+                            ") VALUES ("
+                            ":id, :tid, :shop, :ref, DATE '2026-10-01', DATE '2026-10-09', "
+                            "1.000000, 'USD', 'bill.csv', 1, 0, 0.000000"
+                            ")"
+                        ),
+                        {"id": row_id, "tid": tenant_id, "shop": shop_id, "ref": f"set-{row_id}"},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO settlement_item ("
+                            "id, tenant_id, settlement_id, platform_order_id, fee_type, amount, currency, match_status"
+                            ") VALUES (:id, :tid, :settlement, :order_no, 'COMMISSION', 1.000000, 'USD', 'UNMATCHED')"
+                        ),
+                        {"id": item_id, "tid": tenant_id, "settlement": row_id, "order_no": f"ord-{item_id}"},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        assert _run(_visible("settlement", row_a, row_b, TENANT_A)) == {row_a}
+        assert _run(_visible("settlement", row_a, row_b, TENANT_B)) == {row_b}
+        assert _run(_visible("settlement_item", item_a, item_b, TENANT_A)) == {item_a}
+        assert _run(_visible("settlement_item", item_a, item_b, TENANT_B)) == {item_b}
+        with pytest.raises(Exception):  # noqa: B017 - 结算单不提供删除
+            _run(_delete("settlement", row_a))
+
     def test_tenant_cannot_read_another_tenants_compliance_notice(self, migrated: None) -> None:
         _assert_hidden(
             "compliance_notice",

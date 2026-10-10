@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile
 
 from app.core.deps import DbSession, Identity, require_cost_visibility, require_permission
 from app.core.errors import ParamInvalidError
@@ -23,7 +23,9 @@ from app.schemas.profit import (
     clean_basis,
     clean_grain,
 )
+from app.schemas.settlement import SettlementDetail, SettlementSummary
 from app.services.profit import ProfitService
+from app.services.settlement import SettlementService
 
 router = APIRouter(tags=["利润"])
 
@@ -178,3 +180,62 @@ async def waterfall(
         currency=_optional_currency(currency),
     )
     return ok(data)
+
+
+@router.get("/profit/settlements", response_model=ApiResponse[list[SettlementSummary]], summary="结算单列表")
+async def list_settlements(
+    identity: Reader,
+    _: Visible,
+    session: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> ApiResponse[list[SettlementSummary]]:
+    del identity
+    return ok(await SettlementService(session).list_rows(limit=limit))
+
+
+@router.get(
+    "/profit/settlements/{settlement_id}",
+    response_model=ApiResponse[SettlementDetail],
+    summary="结算单明细",
+)
+async def settlement_detail(
+    settlement_id: int,
+    identity: Reader,
+    _: Visible,
+    session: DbSession,
+) -> ApiResponse[SettlementDetail]:
+    del identity
+    return ok(await SettlementService(session).detail(settlement_id))
+
+
+@router.post("/profit/settlements", response_model=ApiResponse[SettlementDetail], summary="导入结算单")
+async def import_settlement(
+    identity: Writer,
+    _: Visible,
+    session: DbSession,
+    shop_id: Annotated[str, Form()],
+    platform_settlement_id: Annotated[str, Form()],
+    period_start: Annotated[date, Form()],
+    period_end: Annotated[date, Form()],
+    currency: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ApiResponse[SettlementDetail]:
+    try:
+        parsed_shop = parse_id(shop_id)
+        parsed_currency = clean_currency(currency)
+    except ValueError as exc:
+        raise ParamInvalidError("结算单参数不合法") from exc
+    data = await SettlementService(session).import_file(
+        await file.read(),
+        file.filename or "upload.csv",
+        shop_id=parsed_shop,
+        platform_settlement_id=platform_settlement_id,
+        period_start=period_start,
+        period_end=period_end,
+        currency=parsed_currency,
+        tenant_id=identity.tenant.id,
+        actor_id=identity.user.id,
+        idempotency_key=idempotency_key,
+    )
+    return ok(data, message="结算单已导入")

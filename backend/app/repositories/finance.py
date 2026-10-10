@@ -9,7 +9,7 @@ from decimal import Decimal
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.finance import ExchangeRate, SkuProfitDaily
+from app.models.finance import ExchangeRate, Settlement, SettlementItem, SkuProfitDaily
 from app.models.hs_code import HsCode, SpuHsBinding
 from app.models.order import OrderItem, SalesOrder
 from app.models.product import Sku
@@ -211,3 +211,34 @@ class SkuProfitRepository(BaseRepository[SkuProfitDaily]):
         )
         rows = (await self.session.execute(stmt)).all()
         return {int(spu_id): str(code) for spu_id, code in rows}
+
+
+class SettlementRepository(BaseRepository[Settlement]):
+    model = Settlement
+
+    async def get_by_key(self, key: str) -> Settlement | None:
+        return await self.get_by(idempotency_key=key)
+
+    async def get_natural(self, shop_id: int, platform_settlement_id: str) -> Settlement | None:
+        return await self.get_by(shop_id=shop_id, platform_settlement_id=platform_settlement_id)
+
+    async def list_visible(self, *, limit: int) -> list[Settlement]:
+        stmt = self.base_select().order_by(Settlement.period_end.desc(), Settlement.id.desc()).limit(limit)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def items_of(self, settlement_id: int) -> list[SettlementItem]:
+        stmt = (
+            select(SettlementItem)
+            .where(SettlementItem.settlement_id == settlement_id)
+            .order_by(SettlementItem.id.asc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def orders_for(self, shop_id: int, platform_order_ids: list[str]) -> list[SalesOrder]:
+        if not platform_order_ids:
+            return []
+        stmt = select(SalesOrder).where(
+            SalesOrder.shop_id == shop_id,
+            SalesOrder.platform_order_id.in_(platform_order_ids),
+        )
+        return list((await self.session.execute(stmt)).scalars().all())

@@ -14,6 +14,7 @@ from app.models.compliance import (
     ComplianceCertificate,
     ComplianceNotice,
     CountryTaxRule,
+    TaxRegistration,
 )
 from app.models.hs_code import SpuHsBinding
 from app.models.product import Sku, Spu
@@ -212,4 +213,21 @@ class ComplianceReportRepository:
             .order_by(CertRequirementRule.id.asc())
             .limit(limit)
         )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+
+class TaxRegistrationRepository(BaseRepository[TaxRegistration]):
+    model = TaxRegistration
+
+    async def get_by_key(self, key: str) -> TaxRegistration | None:
+        return await self.get_by(idempotency_key=key)
+
+    async def get_active(self, country: str, tax_type: str, tax_no: str) -> TaxRegistration | None:
+        return await self.get_by(country=country, tax_type=tax_type, tax_no=tax_no)
+
+    async def list_visible(self, *, country: str | None, limit: int) -> list[TaxRegistration]:
+        stmt = self.base_select()
+        if country is not None:
+            stmt = stmt.where(TaxRegistration.country == country)
+        stmt = stmt.order_by(TaxRegistration.country.asc(), TaxRegistration.id.desc()).limit(limit)
         return list((await self.session.execute(stmt)).scalars().all())

@@ -106,6 +106,7 @@ export const ErrorCode = {
   FEE_RULE_OVERLAP: 70004,
   EXCHANGE_RATE_LOCKED: 70005,
   EXCHANGE_RATE_OVERLAP: 70006,
+  SETTLEMENT_FILE_INVALID: 70007,
 
   // 80xxx 合规
   HS_CODE_MISSING: 80001,
@@ -1385,6 +1386,27 @@ export interface SpuHsBindingView {
 
 export const TAX_TYPES = ['DUTY', 'VAT', 'GST', 'SST', 'PPN', 'SALES_TAX', 'MPF', 'OTHER'] as const;
 
+export const FILING_CYCLES = ['MONTHLY', 'QUARTERLY', 'ANNUAL'] as const;
+
+export interface TaxRegistrationCreate {
+  country: string;
+  tax_type: string;
+  tax_no: string;
+  entity: string;
+  agent?: string;
+  filing_cycle: string;
+}
+
+export interface TaxRegistrationView {
+  id: string;
+  country: string;
+  tax_type: string;
+  tax_no: string;
+  entity: string;
+  agent: string;
+  filing_cycle: string;
+}
+
 export const CERT_TYPES = [
   'FCC',
   'FDA',
@@ -1752,4 +1774,44 @@ export interface WaterfallView {
   currency: string;
   book_currency: string;
   steps: WaterfallStepView[];
+}
+
+export interface SettlementSummary {
+  id: string;
+  shop_id: string;
+  platform_settlement_id: string;
+  period_start: string;
+  period_end: string;
+  amount: string;
+  currency: string;
+  source: string;
+  line_count: number;
+  matched_count: number;
+  match_rate: string;
+}
+
+export interface SettlementItemView {
+  id: string;
+  platform_order_id: string;
+  order_id: string | null;
+  fee_type: string;
+  amount: string;
+  currency: string;
+  match_status: string;
+}
+
+export interface SettlementGapView {
+  platform_order_id: string;
+  order_id: string | null;
+  order_amount: string | null;
+  order_currency: string | null;
+  settlement_amount: string | null;
+  settlement_currency: string | null;
+  deviation: string | null;
+  note: string;
+}
+
+export interface SettlementDetail extends SettlementSummary {
+  items: SettlementItemView[];
+  gaps: SettlementGapView[];
 }

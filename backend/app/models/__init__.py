@@ -22,6 +22,7 @@ from app.models.compliance import (
     ComplianceCertificate,
     ComplianceNotice,
     CountryTaxRule,
+    TaxRegistration,
 )
 from app.models.config import PlatformRateLimit, PlatformStatusMapping
 from app.models.enums import (
@@ -38,7 +39,7 @@ from app.models.enums import (
     TenantUserStatus,
     UserStatus,
 )
-from app.models.finance import ExchangeRate, SkuProfitDaily
+from app.models.finance import ExchangeRate, Settlement, SettlementItem, SkuProfitDaily
 from app.models.hs_code import HsCode, SpuHsBinding
 from app.models.inventory import (
     Inventory,
@@ -132,12 +133,15 @@ __all__ = [
     "ComplianceCertificate",
     "CertRequirementRule",
     "ComplianceNotice",
+    "TaxRegistration",
     # 财务域（批次 5）
     "LandedCostFee",
     "LandedCostCalc",
     "LandedCostLineToggle",
     "ExchangeRate",
     "SkuProfitDaily",
+    "Settlement",
+    "SettlementItem",
     # 枚举
     "TenantPlan",
     "TenantStatus",

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Select, Space, Switch, Table, Typography } from 'antd';
+import { Alert, Button, Card, Checkbox, Col, DatePicker, Form, Input, Row, Select, Space, Switch, Table, Typography } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { useState } from 'react';
+import * as echarts from 'echarts';
+import { useEffect, useRef, useState } from 'react';
 
 import { ApiError } from '@/api/client';
 import { landedCostApi } from '@/api/landedCost';
@@ -202,6 +203,53 @@ function ResultCard({ view }: { view: LandedCostCalcView }) {
   );
 }
 
+function CostCharts({ view }: { view: LandedCostCalcView }) {
+  const waterfallNode = useRef<HTMLDivElement>(null);
+  const donutNode = useRef<HTMLDivElement>(null);
+  const signature = view.lines.map((line) => `${line.code}:${line.amount ?? ''}`).join('|');
+  useEffect(() => {
+    if (!waterfallNode.current || !donutNode.current) {
+      return undefined;
+    }
+    const drawn = view.lines.filter((line) => line.amount);
+    const waterfall = echarts.init(waterfallNode.current);
+    const donut = echarts.init(donutNode.current);
+    // 坐标轴只接收接口返回的十进制字符串，合计仍由 MoneyText 展示。
+    waterfall.setOption({
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', data: view.lines.map((line) => line.label), axisLabel: { interval: 0, rotate: 40 } },
+      yAxis: { type: 'value' },
+      series: [{ type: 'bar', data: view.lines.map((line) => line.amount) }],
+    });
+    donut.setOption({
+      tooltip: { trigger: 'item' },
+      series: [
+        {
+          type: 'pie',
+          radius: ['42%', '68%'],
+          data: drawn.map((line) => ({ name: line.label, value: line.amount })),
+        },
+      ],
+    });
+    const onResize = () => {
+      waterfall.resize();
+      donut.resize();
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      waterfall.dispose();
+      donut.dispose();
+    };
+  }, [signature, view]);
+  return (
+    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      <div ref={waterfallNode} style={{ height: 280, width: '100%' }} />
+      <div ref={donutNode} style={{ height: 240, width: '100%' }} />
+    </Space>
+  );
+}
+
 export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) {
   const [form] = Form.useForm<CalcForm>();
   const compare = Form.useWatch('compare', form);
@@ -223,13 +271,47 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
     },
     onSuccess: (data) => {
       setOutcome(data);
-      feedback().message.success(copy.calculated);
-      const incomplete = 'left' in data ? !data.left.complete || !data.right.complete : !data.complete;
-      if (incomplete) {
-        feedback().message.warning(copy.incomplete);
-      }
     },
   });
+
+  const scenarios = useMutation({
+    mutationFn: (values: CalcForm) =>
+      Promise.all(
+        (
+          [
+            { name: copy.scenarioPacket, channel: 'PACKET', method: 'CHARGEABLE', storage: false },
+            { name: copy.scenarioSea, channel: 'SEA_LCL', method: 'VOLUME', storage: true },
+            { name: copy.scenarioPlatform, channel: 'EXPRESS', method: 'CHARGEABLE', storage: false },
+          ] as const
+        ).map((item) =>
+          landedCostApi.calculate({
+            ...toRequest(values, 'A', preset?.skuId),
+            name: item.name,
+            channel: item.channel,
+            first_mile_method: item.method,
+            storage_days: item.storage ? countOrNull(values.storage_days) : null,
+          }),
+        ),
+      ),
+  });
+
+  const watched = Form.useWatch([], form) as CalcForm | undefined;
+  const fieldSignature = JSON.stringify(watched ?? {});
+  const runRef = useRef(run.mutate);
+  const scenarioRef = useRef(scenarios.mutate);
+  runRef.current = run.mutate;
+  scenarioRef.current = scenarios.mutate;
+  useEffect(() => {
+    const values = form.getFieldsValue(true) as CalcForm;
+    if (!values.market || !values.selling_currency?.trim() || !values.channel || !values.first_mile_method) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      runRef.current(values);
+      scenarioRef.current(values);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [fieldSignature, form]);
 
   const price = useMutation({
     mutationFn: (values: CalcForm) => {
@@ -251,8 +333,12 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
 
   const allocate = method === 'WEIGHT' || method === 'VOLUME' || method === 'VALUE';
 
+  const primary = views[0] ?? null;
+
   return (
     <Card>
+      <Row gutter={24}>
+        <Col xs={24} xl={14}>
       <Form<CalcForm>
         form={form}
         layout="vertical"
@@ -267,7 +353,17 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
           width_cm: preset?.widthCm,
           height_cm: preset?.heightCm,
         }}
-        onFinish={(values) => run.mutate(values)}
+        onFinish={(values) => {
+          run.mutate(values, {
+            onSuccess: (data) => {
+              feedback().message.success(copy.calculated);
+              const incomplete = 'left' in data ? !data.left.complete || !data.right.complete : !data.complete;
+              if (incomplete) {
+                feedback().message.warning(copy.incomplete);
+              }
+            },
+          });
+        }}
       >
         <Space wrap align="start">
           <Form.Item name="market" label={copy.market} rules={[{ required: true }]}>
@@ -441,19 +537,55 @@ export function LandedCostCalculator({ preset }: { preset?: LandedCostPreset }) 
           />
         </Space>
       ) : null}
-      {run.isError ? <Alert style={{ marginTop: 16 }} type="error" message={messageOf(run.error)} /> : null}
-      {views.length > 0 ? (
-        <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 16 }}>
-          <Button onClick={() => downloadCsv(views)}>{copy.export}</Button>
-          {views.map((view) => (
-            <ResultCard key={`${view.id}-${view.name}`} view={view} />
-          ))}
-        </Space>
-      ) : (
-        <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
-          {copy.empty}
-        </Typography.Paragraph>
-      )}
+        </Col>
+        <Col xs={24} xl={10}>
+          {primary ? <CostCharts view={primary} /> : null}
+          {run.isError ? <Alert style={{ marginTop: 16 }} type="error" message={messageOf(run.error)} /> : null}
+          {scenarios.isError ? <Alert style={{ marginTop: 16 }} type="error" message={messageOf(scenarios.error)} /> : null}
+          {views.length > 0 ? (
+            <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 16 }}>
+              <Button onClick={() => downloadCsv(views)}>{copy.export}</Button>
+              {views.map((view) => (
+                <ResultCard key={`${view.id}-${view.name}`} view={view} />
+              ))}
+            </Space>
+          ) : (
+            <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
+              {copy.empty}
+            </Typography.Paragraph>
+          )}
+        </Col>
+      </Row>
+      <Typography.Title level={5} style={{ marginTop: 24 }}>
+        {copy.scenarios}
+      </Typography.Title>
+      <Table<LandedCostCalcView>
+        rowKey={(row) => `${row.name}-${row.id}`}
+        pagination={false}
+        loading={scenarios.isPending}
+        dataSource={scenarios.data ?? []}
+        locale={{ emptyText: copy.scenarioEmpty }}
+        columns={[
+          { title: copy.scenario, dataIndex: 'name' },
+          {
+            title: copy.landed,
+            render: (_, row) => <MoneyText value={row.landed_cost} currency={row.currency} />,
+          },
+          {
+            title: copy.net,
+            render: (_, row) => <MoneyText value={row.net_profit} currency={row.currency} />,
+          },
+          {
+            title: copy.margin,
+            dataIndex: 'net_margin_percent',
+            render: (value: string | null) => (value ? `${value}%` : '—'),
+          },
+          {
+            title: copy.state,
+            render: (_, row) => (row.complete && row.profit_complete ? copy.ready : copy.missing),
+          },
+        ]}
+      />
     </Card>
   );
 }

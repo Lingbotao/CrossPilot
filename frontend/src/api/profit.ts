@@ -7,6 +7,8 @@ import type {
   ProfitMaterializeRequest,
   ProfitMaterializeView,
   ProfitRowView,
+  SettlementDetail,
+  SettlementSummary,
   WaterfallView,
 } from './types';
 
@@ -28,4 +30,27 @@ export const profitApi = {
 
   waterfall: (params: { date_from: string; date_to: string; currency?: string }) =>
     api.get<WaterfallView>('/profit/waterfall', { params }),
+
+  settlements: () => api.get<SettlementSummary[]>('/profit/settlements'),
+
+  settlement: (settlementId: string) =>
+    api.get<SettlementDetail>(`/profit/settlements/${encodeURIComponent(settlementId)}`),
+
+  importSettlement: (payload: {
+    shop_id: string;
+    platform_settlement_id: string;
+    period_start: string;
+    period_end: string;
+    currency: string;
+    file: File;
+  }) => {
+    const body = new FormData();
+    body.append('shop_id', payload.shop_id);
+    body.append('platform_settlement_id', payload.platform_settlement_id);
+    body.append('period_start', payload.period_start);
+    body.append('period_end', payload.period_end);
+    body.append('currency', payload.currency);
+    body.append('file', payload.file);
+    return api.post<SettlementDetail>('/profit/settlements', body, { idempotent: true });
+  },
 };
