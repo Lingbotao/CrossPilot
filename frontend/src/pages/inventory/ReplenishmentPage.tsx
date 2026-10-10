@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { ApiError } from '@/api/client';
 import { inventoryApi } from '@/api/inventory';
+import { purchaseApi } from '@/api/purchase';
 import { Perm, type ReplenishmentView, type SafetyStockView } from '@/api/types';
 import { feedback } from '@/app/feedback';
 import { PermissionGuard } from '@/components/PermissionGuard';
@@ -23,9 +24,35 @@ function messageOf(error: unknown): string {
   return error instanceof ApiError ? error.message : copy.requestFailed;
 }
 
+interface DraftForm {
+  warehouse_id: string;
+  supplier_id?: string;
+  currency: string;
+  unit_price?: string;
+}
+
 export function ReplenishmentPage() {
   const client = useQueryClient();
   const [windowDays, setWindowDays] = useState(30);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [draftForm] = Form.useForm<DraftForm>();
+  const warehouses = useQuery({
+    queryKey: ['warehouses'],
+    queryFn: () => inventoryApi.listWarehouses({ limit: 100 }),
+  });
+  const convert = useMutation({
+    mutationFn: (values: DraftForm) =>
+      purchaseApi.fromReplenishment({
+        sku_ids: selected,
+        warehouse_id: values.warehouse_id,
+        supplier_id: values.supplier_id || null,
+        currency: values.currency,
+        window_days: windowDays,
+        unit_price: values.unit_price || null,
+      }),
+    onSuccess: () => feedback().message.success(copy.purchaseDraftCreated),
+    onError: (error) => feedback().message.error(messageOf(error)),
+  });
   const safety = useQuery({
     queryKey: ['safety-stocks'],
     queryFn: () => inventoryApi.listSafety({ limit: 100 }),
@@ -120,11 +147,41 @@ export function ReplenishmentPage() {
         }
       >
         {suggestions.isError ? <Alert type="error" message={messageOf(suggestions.error)} /> : null}
+        <PermissionGuard permission={Perm.PURCHASE_WRITE}>
+          <Form<DraftForm> form={draftForm} layout="inline" onFinish={(values) => convert.mutate(values)}>
+            <Form.Item name="warehouse_id" label={copy.warehouse} rules={[{ required: true }]}>
+              <Select
+                style={{ width: 160 }}
+                options={(warehouses.data?.items ?? [])
+                  .filter((row) => row.warehouse_type !== 'PLATFORM')
+                  .map((row) => ({ value: row.id, label: row.name }))}
+              />
+            </Form.Item>
+            <Form.Item name="supplier_id" label={copy.purchaseSupplierOptional}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="currency" label={copy.purchaseCurrency} rules={[{ required: true }]}>
+              <Input maxLength={3} style={{ width: 80 }} />
+            </Form.Item>
+            <Form.Item name="unit_price" label={copy.purchaseUnitPriceOptional}>
+              <Input />
+            </Form.Item>
+            <Button htmlType="submit" disabled={selected.length === 0} loading={convert.isPending}>
+              {copy.createPurchaseDraft}
+            </Button>
+          </Form>
+        </PermissionGuard>
         <Table<ReplenishmentView>
           rowKey={(row) => `${row.sku_id}-${row.platform_code}`}
           loading={suggestions.isLoading}
           dataSource={suggestions.data ?? []}
           pagination={false}
+          rowSelection={{
+            selectedRowKeys: (suggestions.data ?? [])
+              .filter((row) => selected.includes(row.sku_id))
+              .map((row) => `${row.sku_id}-${row.platform_code}`),
+            onChange: (_, rows) => setSelected([...new Set(rows.map((row) => row.sku_id))]),
+          }}
           columns={[
             { title: copy.sku, dataIndex: 'sku_code' },
             { title: copy.platform, dataIndex: 'platform_code' },

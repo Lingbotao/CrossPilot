@@ -1788,6 +1788,174 @@ class TestComplianceConfigIsolation:
         )
 
 
+class TestPurchaseIsolation:
+    def test_tenant_cannot_read_another_tenants_supplier_order_or_cost_pool(self, migrated: None) -> None:
+        base = 971000000000000000 + time.time_ns() % 10**12
+        spu_a, spu_b = base, base + 1
+        sku_a, sku_b = base + 2, base + 3
+        warehouse_a, warehouse_b = base + 4, base + 5
+        supplier_a, supplier_b = base + 6, base + 7
+        link_a, link_b = base + 8, base + 9
+        order_a, order_b = base + 10, base + 11
+        item_a, item_b = base + 12, base + 13
+        receipt_a, receipt_b = base + 14, base + 15
+        shipment_a, shipment_b = base + 16, base + 17
+        alloc_a, alloc_b = base + 18, base + 19
+        pool_a, pool_b = base + 20, base + 21
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for spu_id, tenant_id in ((spu_a, TENANT_A), (spu_b, TENANT_B)):
+                    await session.execute(
+                        text("INSERT INTO spu (id, tenant_id, title, status) VALUES (:id, :tid, 'po', 'DRAFT')"),
+                        {"id": spu_id, "tid": tenant_id},
+                    )
+                for sku_id, tenant_id, spu_id in ((sku_a, TENANT_A, spu_a), (sku_b, TENANT_B, spu_b)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku (id, tenant_id, spu_id, sku_code, weight_g, length_cm, width_cm, height_cm) "
+                            "VALUES (:id, :tid, :spu, :code, 100, 10, 10, 10)"
+                        ),
+                        {"id": sku_id, "tid": tenant_id, "spu": spu_id, "code": f"PO-{sku_id}"},
+                    )
+                for warehouse_id, tenant_id in ((warehouse_a, TENANT_A), (warehouse_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO warehouse (id, tenant_id, name, warehouse_type, country) "
+                            "VALUES (:id, :tid, '采购仓', 'LOCAL', 'CN')"
+                        ),
+                        {"id": warehouse_id, "tid": tenant_id},
+                    )
+                rows = (
+                    (
+                        supplier_a,
+                        TENANT_A,
+                        sku_a,
+                        warehouse_a,
+                        link_a,
+                        order_a,
+                        item_a,
+                        receipt_a,
+                        shipment_a,
+                        alloc_a,
+                        pool_a,
+                    ),
+                    (
+                        supplier_b,
+                        TENANT_B,
+                        sku_b,
+                        warehouse_b,
+                        link_b,
+                        order_b,
+                        item_b,
+                        receipt_b,
+                        shipment_b,
+                        alloc_b,
+                        pool_b,
+                    ),
+                )
+                for (
+                    supplier_id,
+                    tenant_id,
+                    sku_id,
+                    warehouse_id,
+                    link_id,
+                    order_id,
+                    item_id,
+                    receipt_id,
+                    shipment_id,
+                    alloc_id,
+                    pool_id,
+                ) in rows:
+                    await session.execute(
+                        text(
+                            "INSERT INTO supplier (id, tenant_id, name, settlement_type) "
+                            "VALUES (:id, :tid, :name, 'PREPAY')"
+                        ),
+                        {"id": supplier_id, "tid": tenant_id, "name": f"供应商{supplier_id}"},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku_supplier (id, tenant_id, supplier_id, sku_id, is_default) "
+                            "VALUES (:id, :tid, :supplier, :sku, true)"
+                        ),
+                        {"id": link_id, "tid": tenant_id, "supplier": supplier_id, "sku": sku_id},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO purchase_order ("
+                            "id, tenant_id, supplier_id, warehouse_id, status, currency, total_amount"
+                            ") VALUES (:id, :tid, :supplier, :warehouse, 'DRAFT', 'CNY', 10.000000)"
+                        ),
+                        {"id": order_id, "tid": tenant_id, "supplier": supplier_id, "warehouse": warehouse_id},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO purchase_order_item ("
+                            "id, tenant_id, purchase_order_id, sku_id, quantity, unit_price, currency"
+                            ") VALUES (:id, :tid, :order, :sku, 2, 5.000000, 'CNY')"
+                        ),
+                        {"id": item_id, "tid": tenant_id, "order": order_id, "sku": sku_id},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO purchase_receipt (id, tenant_id, purchase_order_id, disposition, lines) "
+                            "VALUES (:id, :tid, :order, 'RECEIVE', CAST('[]' AS jsonb))"
+                        ),
+                        {"id": receipt_id, "tid": tenant_id, "order": order_id},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO first_mile_shipment ("
+                            "id, tenant_id, forwarder, channel, destination_market, cost_total, currency, "
+                            "alloc_method, lines"
+                            ") VALUES (:id, :tid, '货代', 'AIR', 'US', 8.000000, 'USD', 'WEIGHT', CAST('[]' AS jsonb))"
+                        ),
+                        {"id": shipment_id, "tid": tenant_id},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO first_mile_cost_allocation ("
+                            "id, tenant_id, shipment_id, sku_id, quantity, allocated_cost, currency, method, formula, source"
+                            ") VALUES (:id, :tid, :shipment, :sku, 2, 8.000000, 'USD', 'WEIGHT', 'formula', 'source')"
+                        ),
+                        {"id": alloc_id, "tid": tenant_id, "shipment": shipment_id, "sku": sku_id},
+                    )
+                    await session.execute(
+                        text(
+                            "INSERT INTO sku_cost_pool ("
+                            "id, tenant_id, sku_id, shipment_id, quantity, currency, purchase_unit, first_mile_unit, "
+                            "duty_unit, import_tax_unit, brokerage_unit, storage_unit, fx_reserve_unit, landed_unit, "
+                            "lines, source"
+                            ") VALUES ("
+                            ":id, :tid, :sku, :shipment, 2, 'USD', 1, 1, 1, 1, 1, 0, 0, 4, "
+                            "CAST('[]' AS jsonb), 'first_mile_shipment')"
+                        ),
+                        {"id": pool_id, "tid": tenant_id, "sku": sku_id, "shipment": shipment_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        pairs = (
+            ("supplier", supplier_a, supplier_b),
+            ("sku_supplier", link_a, link_b),
+            ("purchase_order", order_a, order_b),
+            ("purchase_order_item", item_a, item_b),
+            ("purchase_receipt", receipt_a, receipt_b),
+            ("first_mile_shipment", shipment_a, shipment_b),
+            ("first_mile_cost_allocation", alloc_a, alloc_b),
+            ("sku_cost_pool", pool_a, pool_b),
+        )
+        for table, left, right in pairs:
+            assert _run(_visible(table, left, right, TENANT_A)) == {left}
+            assert _run(_visible(table, left, right, TENANT_B)) == {right}
+            with pytest.raises(Exception):  # noqa: B017 - 应用角色没有 DELETE
+                _run(_delete(table, left))
+
+
 def _assert_hidden(table: str, columns: str, values: str) -> None:
     base = 972000000000000000 + time.time_ns() % 10**12
     row_a, row_b = base, base + 1

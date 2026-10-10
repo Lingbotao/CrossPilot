@@ -70,6 +70,16 @@ from app.models.order import (
 )
 from app.models.platform import Platform, PlatformApiLog, Shop, ShopCredential, ShopGroup, SyncTask
 from app.models.product import ProductImage, Sku, Spu
+from app.models.purchase import (
+    FirstMileCostAllocation,
+    FirstMileShipment,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseReceipt,
+    SkuCostPool,
+    SkuSupplier,
+    Supplier,
+)
 from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
 
 __all__ = [
@@ -142,6 +152,15 @@ __all__ = [
     "SkuProfitDaily",
     "Settlement",
     "SettlementItem",
+    # 采购域（批次 6）
+    "Supplier",
+    "SkuSupplier",
+    "PurchaseOrder",
+    "PurchaseOrderItem",
+    "PurchaseReceipt",
+    "FirstMileShipment",
+    "FirstMileCostAllocation",
+    "SkuCostPool",
     # 枚举
     "TenantPlan",
     "TenantStatus",

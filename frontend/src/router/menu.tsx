@@ -49,6 +49,9 @@ import { LocalePage } from '@/pages/products/LocalePage';
 import { ProductDetailPage } from '@/pages/products/ProductDetailPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { PublishPage } from '@/pages/products/PublishPage';
+import { FirstMilePage } from '@/pages/purchase/FirstMilePage';
+import { PurchaseOrdersPage } from '@/pages/purchase/PurchaseOrdersPage';
+import { SuppliersPage } from '@/pages/purchase/SuppliersPage';
 import { ShopsPage } from '@/pages/shops/ShopsPage';
 import { AuditPage } from '@/pages/system/AuditPage';
 import { MembersPage } from '@/pages/system/MembersPage';
@@ -374,6 +377,47 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     permission: Perm.PURCHASE_READ,
     milestone: 'M5（Week 10–11）',
     delivered: false,
+    children: [
+      {
+        key: 'purchase-orders',
+        path: '/purchase/orders',
+        label: zhCN.menu.purchaseOrders,
+        icon: null,
+        permission: Perm.PURCHASE_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: PurchaseOrdersPage,
+      },
+      {
+        key: 'purchase-suppliers',
+        path: '/purchase/suppliers',
+        label: zhCN.menu.purchaseSuppliers,
+        icon: null,
+        permission: Perm.PURCHASE_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: SuppliersPage,
+      },
+      {
+        key: 'purchase-first-mile',
+        path: '/purchase/first-mile',
+        label: zhCN.menu.purchaseFirstMile,
+        icon: null,
+        permission: Perm.PURCHASE_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: FirstMilePage,
+      },
+      {
+        key: 'purchase-payables',
+        path: '/purchase/payables',
+        label: zhCN.menu.purchasePayables,
+        icon: null,
+        permission: Perm.PURCHASE_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: false,
+      },
+    ],
   },
   {
     key: 'finance',

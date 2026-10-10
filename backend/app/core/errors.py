@@ -9,8 +9,8 @@
 | 30xxx | 平台与同步  | 30001 平台不支持，30002 授权失败，30003 平台限流  |
 | 40xxx | 商品        | 40001 SKU 编码重复，40007 批次超过 500，40009 导入行错误 |
 | 50xxx | 订单        | 50001 订单不存在，50002 状态不允许该操作          |
-| 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60004 仓库编码冲突，60005 调拨仓库不合法 |
-| 70xxx | 财务        | 70001 汇率缺失，70002 对账不平，70004 费用区间重叠，70005 汇率已锁定，70006 汇率重叠，70007 结算文件无法解析 |
+| 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60008 采购状态不允许，60009 收货数量不合法 |
+| 70xxx | 财务        | 70001 汇率缺失，70002 对账不平，70008 到仓成本配置不完整 |
 | 80xxx | 合规        | 80001 缺失 HS 编码，80004 税率区间重叠，80006 认证附件不合法 |
 """
 
@@ -89,6 +89,9 @@ class ErrorCode(IntEnum):
     TRANSFER_WAREHOUSE_INVALID = 60005
     TRANSFER_STATE_INVALID = 60006
     STOCK_TAKING_STATE_INVALID = 60007
+    PURCHASE_STATE_INVALID = 60008
+    RECEIPT_QUANTITY_INVALID = 60009
+    SUPPLIER_DEFAULT_CONFLICT = 60010
 
     # ---- 70xxx 财务 ----
     EXCHANGE_RATE_MISSING = 70001
@@ -98,6 +101,7 @@ class ErrorCode(IntEnum):
     EXCHANGE_RATE_LOCKED = 70005
     EXCHANGE_RATE_OVERLAP = 70006
     SETTLEMENT_FILE_INVALID = 70007
+    COST_POOL_INCOMPLETE = 70008
 
     # ---- 80xxx 合规 ----
     HS_CODE_MISSING = 80001
@@ -164,6 +168,9 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.TRANSFER_WAREHOUSE_INVALID: 422,
     ErrorCode.TRANSFER_STATE_INVALID: 409,
     ErrorCode.STOCK_TAKING_STATE_INVALID: 409,
+    ErrorCode.PURCHASE_STATE_INVALID: 409,
+    ErrorCode.RECEIPT_QUANTITY_INVALID: 409,
+    ErrorCode.SUPPLIER_DEFAULT_CONFLICT: 409,
     ErrorCode.EXCHANGE_RATE_MISSING: 422,
     ErrorCode.SETTLEMENT_MISMATCH: 409,
     ErrorCode.LANDED_COST_PARAM_MISSING: 422,
@@ -171,6 +178,7 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.EXCHANGE_RATE_LOCKED: 409,
     ErrorCode.EXCHANGE_RATE_OVERLAP: 409,
     ErrorCode.SETTLEMENT_FILE_INVALID: 400,
+    ErrorCode.COST_POOL_INCOMPLETE: 422,
     ErrorCode.HS_CODE_MISSING: 422,
     ErrorCode.CERTIFICATE_EXPIRED: 409,
     ErrorCode.MARKET_RESTRICTED: 403,
@@ -300,6 +308,26 @@ class StockTakingStateError(AppError):
     message = "盘点单当前状态不能执行该操作"
 
 
+class PurchaseStateError(AppError):
+    code = ErrorCode.PURCHASE_STATE_INVALID
+    message = "采购单当前状态不能执行该操作"
+
+
+class ReceiptInvalidError(AppError):
+    code = ErrorCode.RECEIPT_QUANTITY_INVALID
+    message = "收货数量不合法"
+
+
+class SupplierDefaultError(AppError):
+    code = ErrorCode.SUPPLIER_DEFAULT_CONFLICT
+    message = "同一 SKU 只能有一个默认供应商"
+
+
+class CostPoolIncompleteError(AppError):
+    code = ErrorCode.COST_POOL_INCOMPLETE
+    message = "到仓成本配置不完整，不能回写"
+
+
 class ExchangeRateMissingError(AppError):
     code = ErrorCode.EXCHANGE_RATE_MISSING
     message = "汇率缺失"
@@ -338,7 +366,11 @@ __all__ = [
     "HSCodeMissingError",
     "InventoryConflictError",
     "InventoryInsufficientError",
+    "CostPoolIncompleteError",
+    "PurchaseStateError",
+    "ReceiptInvalidError",
     "StockTakingStateError",
+    "SupplierDefaultError",
     "TransferStateError",
     "TransferWarehouseError",
     "NotFoundError",

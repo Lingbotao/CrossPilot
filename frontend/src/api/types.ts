@@ -98,6 +98,9 @@ export const ErrorCode = {
   TRANSFER_WAREHOUSE_INVALID: 60005,
   TRANSFER_STATE_INVALID: 60006,
   STOCK_TAKING_STATE_INVALID: 60007,
+  PURCHASE_STATE_INVALID: 60008,
+  RECEIPT_QUANTITY_INVALID: 60009,
+  SUPPLIER_DEFAULT_CONFLICT: 60010,
 
   // 70xxx 财务
   EXCHANGE_RATE_MISSING: 70001,
@@ -107,6 +110,7 @@ export const ErrorCode = {
   EXCHANGE_RATE_LOCKED: 70005,
   EXCHANGE_RATE_OVERLAP: 70006,
   SETTLEMENT_FILE_INVALID: 70007,
+  COST_POOL_INCOMPLETE: 70008,
 
   // 80xxx 合规
   HS_CODE_MISSING: 80001,
@@ -1814,4 +1818,182 @@ export interface SettlementGapView {
 export interface SettlementDetail extends SettlementSummary {
   items: SettlementItemView[];
   gaps: SettlementGapView[];
+}
+
+export type PurchaseStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'PARTIAL' | 'RECEIVED' | 'CLOSED' | 'CANCELLED';
+export type SettlementType = 'PREPAY' | 'CREDIT' | 'COD';
+export type ReceiptDisposition = 'RECEIVE' | 'SHORT';
+export type AllocMethod = 'WEIGHT' | 'VOLUME' | 'VALUE';
+export type FirstMileChannel = 'AIR' | 'SEA_FCL' | 'SEA_LCL' | 'EXPRESS' | 'PACKET';
+
+export interface SkuSupplierView {
+  sku_id: string;
+  sku_code: string;
+  is_default: boolean;
+}
+
+export interface SupplierView {
+  id: string;
+  name: string;
+  contact: string;
+  settlement_type: SettlementType;
+  credit_days: number;
+  rating: number | null;
+  skus: SkuSupplierView[];
+}
+
+export interface SupplierWrite {
+  name: string;
+  contact?: string;
+  settlement_type: SettlementType;
+  credit_days?: number;
+  rating?: number | null;
+}
+
+export interface PurchaseLineView {
+  id: string;
+  sku_id: string;
+  sku_code: string;
+  quantity: number;
+  received_qty: number;
+  short_qty: number;
+  open_qty: number;
+  unit_price: string | null;
+  currency: string | null;
+  tax_included: boolean;
+  expected_on: string | null;
+}
+
+export interface PurchaseOrderView {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  warehouse_type: string;
+  status: PurchaseStatus;
+  currency: string | null;
+  total_amount: string | null;
+  expected_on: string | null;
+  note: string;
+  lines: PurchaseLineView[];
+}
+
+export interface PurchaseLineWrite {
+  sku_id: string;
+  quantity: number;
+  unit_price: string;
+  tax_included?: boolean;
+  expected_on?: string | null;
+}
+
+export interface PurchaseOrderCreate {
+  supplier_id: string;
+  warehouse_id: string;
+  currency: string;
+  expected_on?: string | null;
+  note?: string;
+  lines: PurchaseLineWrite[];
+}
+
+export interface ReceiptCreate {
+  disposition: ReceiptDisposition;
+  allow_over?: boolean;
+  note?: string;
+  lines: { item_id: string; quantity: number }[];
+}
+
+export interface ReceiptView {
+  id: string;
+  purchase_order_id: string;
+  disposition: ReceiptDisposition;
+  note: string;
+  order: PurchaseOrderView;
+}
+
+export interface InTransitLineView {
+  region: 'DOMESTIC' | 'OVERSEAS';
+  warehouse_id: string;
+  warehouse_name: string;
+  warehouse_type: string;
+  sku_id: string;
+  sku_code: string;
+  quantity: number;
+}
+
+export interface InTransitView {
+  domestic_qty: number;
+  overseas_qty: number;
+  lines: InTransitLineView[];
+}
+
+export interface AllocationView {
+  id: string;
+  sku_id: string;
+  sku_code: string;
+  quantity: number;
+  allocated_cost: string | null;
+  currency: string | null;
+  method: AllocMethod;
+  formula: string;
+  source: string;
+}
+
+export interface CostPoolView {
+  id: string;
+  sku_id: string;
+  quantity: number;
+  currency: string | null;
+  purchase_unit: string | null;
+  first_mile_unit: string | null;
+  duty_unit: string | null;
+  import_tax_unit: string | null;
+  brokerage_unit: string | null;
+  storage_unit: string | null;
+  fx_reserve_unit: string | null;
+  landed_unit: string | null;
+  lines: { code: string; label: string; amount: string | null; formula: string; source: string }[];
+  source: string;
+}
+
+export interface ShipmentView {
+  id: string;
+  purchase_order_id: string | null;
+  from_warehouse_id: string | null;
+  to_warehouse_id: string | null;
+  forwarder: string;
+  channel: FirstMileChannel;
+  container_no: string;
+  destination_market: string;
+  cost_total: string | null;
+  currency: string | null;
+  alloc_method: AllocMethod;
+  storage_days: number;
+  status: 'DRAFT' | 'POSTED';
+  allocations: AllocationView[];
+  pools: CostPoolView[];
+}
+
+export interface ShipmentCreate {
+  forwarder: string;
+  channel: FirstMileChannel;
+  container_no?: string;
+  destination_market: string;
+  cost_total: string;
+  currency: string;
+  alloc_method: AllocMethod;
+  storage_days?: number;
+  purchase_order_id?: string | null;
+  from_warehouse_id?: string | null;
+  to_warehouse_id?: string | null;
+  lines: { sku_id: string; quantity: number }[];
+}
+
+export interface ReplenishmentConvert {
+  sku_ids: string[];
+  warehouse_id: string;
+  supplier_id?: string | null;
+  currency: string;
+  window_days?: number;
+  unit_price?: string | null;
 }

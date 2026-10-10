@@ -298,6 +298,47 @@ class InventoryService:
         await self._flush_enqueue()
         return await self._view_for(fresh)
 
+    async def post_stock(
+        self,
+        *,
+        sku_id: int,
+        warehouse_id: int,
+        tenant_id: int,
+        actor_id: int,
+        available_delta: int = 0,
+        in_transit_delta: int = 0,
+        ref_type: str,
+        ref_id: int | None,
+    ) -> None:
+        """采购收货和头程搬运用。在途和实物分开记流水。"""
+
+        if available_delta == 0 and in_transit_delta == 0:
+            return
+        row = await self._ensure(sku_id, warehouse_id, tenant_id=tenant_id, actor_id=actor_id)
+        if available_delta:
+            row = await self._commit_change(
+                row,
+                flow_type="INBOUND" if available_delta > 0 else "OUTBOUND",
+                quantity=abs(available_delta),
+                before_name="available",
+                ref_type=ref_type,
+                ref_id=ref_id,
+                actor_id=actor_id,
+                available_delta=available_delta,
+            )
+        if in_transit_delta:
+            await self._commit_change(
+                row,
+                flow_type="ADJUST",
+                quantity=abs(in_transit_delta),
+                before_name="in_transit",
+                ref_type=ref_type,
+                ref_id=ref_id,
+                actor_id=actor_id,
+                in_transit_delta=in_transit_delta,
+            )
+        await self._flush_enqueue()
+
     async def set_safe_stock(self, inventory_id: int, safe_stock: int, *, actor_id: int) -> InventoryView:
         row = await self.inventories.get_or_404(inventory_id)
         row.safe_stock = safe_stock
