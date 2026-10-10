@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from app.db.base import Base
+from app.models.ads import AdCampaign, AdKeywordMetric, AdMetricDaily
 from app.models.audit import AuditLog, LoginLog
 from app.models.compliance import (
     CertRequirementRule,
@@ -161,6 +162,10 @@ __all__ = [
     "FirstMileShipment",
     "FirstMileCostAllocation",
     "SkuCostPool",
+    # 广告域（批次 6）
+    "AdCampaign",
+    "AdMetricDaily",
+    "AdKeywordMetric",
     # 枚举
     "TenantPlan",
     "TenantStatus",

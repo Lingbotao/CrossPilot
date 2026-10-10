@@ -100,6 +100,11 @@ celery_app.conf.beat_schedule = {
         "task": "compliance.scan_alerts",
         "schedule": crontab(hour=1, minute=15),
     },
+    # 广告只读拉取。间隔来自 ADS_SYNC_INTERVAL_SECONDS，默认 6 小时。
+    "beat-scan-ads": {
+        "task": "sync.scan_ads",
+        "schedule": timedelta(seconds=settings.ads_sync_interval_seconds),
+    },
 }
 
 

@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # 库存滞后降 0 的巡检间隔。阈值本身在 platform_rate_limit.stock_push_lag_seconds。
     stock_push_sweep_seconds: int = 60
     sync_order_max_pages: int = 20
+    # 广告只读同步。间隔对应 PRD 的 6 小时拉取，回看天数和单次页数都走配置。
+    ads_sync_interval_seconds: int = 21600
+    ads_sync_lookback_days: int = 7
+    ads_sync_max_days: int = 31
+    ads_sync_max_pages: int = 20
     # Webhook（PRD 10.5）：单平台每秒 100 次、事件 ID 保留 24 小时。空 CIDR 表示平台还没给来源网段。
     webhook_qps: int = 100
     webhook_event_ttl_seconds: int = 86400

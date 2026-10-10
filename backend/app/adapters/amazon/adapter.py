@@ -7,6 +7,17 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urlencode
 
+from app.adapters.ads_fields import (
+    build_campaign,
+    build_day,
+    build_keyword,
+    count_field,
+    currency_field,
+    day_field,
+    money_field,
+    optional_text,
+    text_field,
+)
 from app.adapters.amazon.sns import (
     HttpSnsCertSource,
     SnsCertSource,
@@ -25,13 +36,16 @@ from app.adapters.base import (
     RateLimitSpec,
     RemoteListing,
     TokenBundle,
+    UnifiedAdCampaign,
+    UnifiedAdDay,
+    UnifiedAdKeyword,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
 )
 from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
-from app.adapters.errors import AdapterError
+from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.oauth_parse import amazon_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.shipping import post_order_change, post_shipment
@@ -42,6 +56,13 @@ from app.adapters.webhook_common import load_object, matching_order
 
 _TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 _ORDERS_URL = "https://sellingpartnerapi-na.amazon.com/orders/v0/orders"
+_ADS_URL = "https://advertising-api.amazon.com/ads/campaigns"
+_AMAZON_STATUS = {"ENABLED": "ENABLED", "PAUSED": "PAUSED", "ARCHIVED": "ARCHIVED"}
+_AMAZON_TYPE = {
+    "SPONSORED_PRODUCTS": "SPONSORED_PRODUCT",
+    "SPONSORED_BRANDS": "SPONSORED_BRAND",
+    "SPONSORED_DISPLAY": "SPONSORED_DISPLAY",
+}
 
 
 class AmazonAdapter(PlatformAdapter):
@@ -114,6 +135,22 @@ class AmazonAdapter(PlatformAdapter):
             url = f"{url}&NextToken={quote(cursor, safe='')}"
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
         return _amazon_page(self, raw, cred)
+
+    async def fetch_ads(
+        self,
+        cred: CredentialView,
+        *,
+        since: datetime,
+        until: datetime,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedAdCampaign]:
+        del cred
+        query = urlencode({"startDate": since.date().isoformat(), "endDate": until.date().isoformat()})
+        url = f"{_ADS_URL}?{query}"
+        if cursor:
+            url = f"{url}&nextToken={quote(cursor, safe='')}"
+        _status, raw = await self.transport.request("GET", url, platform=self.platform)
+        return _amazon_ads(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         url = f"{_ORDERS_URL}/{quote(platform_order_id, safe='')}"
@@ -219,6 +256,68 @@ class AmazonAdapter(PlatformAdapter):
             "Canceled": "CANCELLED",
             "Unfulfillable": "CANCELLED",
         }
+
+
+def _amazon_ads(raw: dict[str, Any]) -> PageResult[UnifiedAdCampaign]:
+    rows = raw.get("campaigns")
+    if not isinstance(rows, list):
+        raise AdapterError("Amazon 广告报表缺少 campaigns", platform="amazon", decision=RetryDecision.FAIL_FAST)
+    items = [_amazon_campaign(row) for row in rows]
+    token = raw.get("nextToken")
+    return PageResult(items=items, next_cursor=str(token) if token else None)
+
+
+def _amazon_campaign(row: object) -> UnifiedAdCampaign:
+    if not isinstance(row, dict):
+        raise AdapterError("Amazon 广告活动不是对象", platform="amazon", decision=RetryDecision.FAIL_FAST)
+    metrics = row.get("metrics")
+    if not isinstance(metrics, list):
+        raise AdapterError("Amazon 广告日指标缺失", platform="amazon", decision=RetryDecision.FAIL_FAST)
+    state = str(row.get("state") or "").upper()
+    product = str(row.get("adProduct") or "").upper()
+    return build_campaign(
+        platform="amazon",
+        platform_campaign_id=text_field(row.get("campaignId"), platform="amazon", field="campaignId"),
+        name=text_field(row.get("name"), platform="amazon", field="name"),
+        campaign_type=_AMAZON_TYPE.get(product, "OTHER"),
+        status=_AMAZON_STATUS.get(state, "UNKNOWN"),
+        currency=currency_field(row.get("currency"), platform="amazon"),
+        platform_sku_id=optional_text(row.get("sku")),
+        days=tuple(_amazon_day(item, currency_field(row.get("currency"), platform="amazon")) for item in metrics),
+    )
+
+
+def _amazon_day(row: object, currency: str) -> UnifiedAdDay:
+    if not isinstance(row, dict):
+        raise AdapterError("Amazon 广告日指标不是对象", platform="amazon", decision=RetryDecision.FAIL_FAST)
+    keywords = row.get("keywords", [])
+    if not isinstance(keywords, list):
+        raise AdapterError("Amazon 关键词报表不是列表", platform="amazon", decision=RetryDecision.FAIL_FAST)
+    return build_day(
+        platform="amazon",
+        stat_date=day_field(row.get("date"), platform="amazon"),
+        impressions=count_field(row.get("impressions"), platform="amazon", field="impressions"),
+        clicks=count_field(row.get("clicks"), platform="amazon", field="clicks"),
+        spend=money_field(row.get("cost"), platform="amazon", field="cost"),
+        sales=money_field(row.get("sales"), platform="amazon", field="sales"),
+        orders=count_field(row.get("purchases"), platform="amazon", field="purchases"),
+        currency=currency,
+        keywords=tuple(_amazon_keyword(item) for item in keywords),
+    )
+
+
+def _amazon_keyword(row: object) -> UnifiedAdKeyword:
+    if not isinstance(row, dict):
+        raise AdapterError("Amazon 关键词不是对象", platform="amazon", decision=RetryDecision.FAIL_FAST)
+    return build_keyword(
+        platform="amazon",
+        keyword=text_field(row.get("keyword"), platform="amazon", field="keyword"),
+        impressions=count_field(row.get("impressions"), platform="amazon", field="impressions"),
+        clicks=count_field(row.get("clicks"), platform="amazon", field="clicks"),
+        spend=money_field(row.get("cost"), platform="amazon", field="cost"),
+        sales=money_field(row.get("sales"), platform="amazon", field="sales"),
+        orders=count_field(row.get("purchases"), platform="amazon", field="purchases"),
+    )
 
 
 def _amazon_page(adapter: AmazonAdapter, raw: dict[str, Any], cred: CredentialView) -> PageResult[UnifiedOrder]:

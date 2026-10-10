@@ -9,6 +9,7 @@ import {
   AppstoreOutlined,
   AuditOutlined,
   DashboardOutlined,
+  FundOutlined,
   GlobalOutlined,
   InboxOutlined,
   KeyOutlined,
@@ -49,6 +50,10 @@ import { LocalePage } from '@/pages/products/LocalePage';
 import { ProductDetailPage } from '@/pages/products/ProductDetailPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { PublishPage } from '@/pages/products/PublishPage';
+import { AdsCampaignsPage } from '@/pages/ads/AdsCampaignsPage';
+import { AdsKeywordsPage } from '@/pages/ads/AdsKeywordsPage';
+import { AdsLossPage } from '@/pages/ads/AdsLossPage';
+import { AdsOverviewPage } from '@/pages/ads/AdsOverviewPage';
 import { FirstMilePage } from '@/pages/purchase/FirstMilePage';
 import { PurchaseOrdersPage } from '@/pages/purchase/PurchaseOrdersPage';
 import { SuppliersPage } from '@/pages/purchase/SuppliersPage';
@@ -416,6 +421,57 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         permission: Perm.PURCHASE_READ,
         milestone: 'M5（Week 10–11）',
         delivered: false,
+      },
+    ],
+  },
+  {
+    key: 'ads',
+    path: '/ads',
+    label: zhCN.menu.ads,
+    icon: <FundOutlined />,
+    permission: Perm.ADS_READ,
+    milestone: 'M5（Week 10–11）',
+    delivered: false,
+    children: [
+      {
+        key: 'ads-overview',
+        path: '/ads/overview',
+        label: zhCN.menu.adsOverview,
+        icon: null,
+        permission: Perm.ADS_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AdsOverviewPage,
+      },
+      {
+        key: 'ads-campaigns',
+        path: '/ads/campaigns',
+        label: zhCN.menu.adsCampaigns,
+        icon: null,
+        permission: Perm.ADS_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AdsCampaignsPage,
+      },
+      {
+        key: 'ads-keywords',
+        path: '/ads/keywords',
+        label: zhCN.menu.adsKeywords,
+        icon: null,
+        permission: Perm.ADS_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AdsKeywordsPage,
+      },
+      {
+        key: 'ads-loss',
+        path: '/ads/loss',
+        label: zhCN.menu.adsLoss,
+        icon: null,
+        permission: Perm.ADS_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: AdsLossPage,
       },
     ],
   },

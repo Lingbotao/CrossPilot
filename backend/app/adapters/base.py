@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
@@ -75,6 +75,41 @@ class UnifiedInventory:
     platform_sku_id: str
     available: int
     raw: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class UnifiedAdKeyword:
+    keyword: str
+    impressions: int
+    clicks: int
+    spend: Decimal
+    sales: Decimal
+    orders: int
+
+
+@dataclass(frozen=True, slots=True)
+class UnifiedAdDay:
+    stat_date: date
+    impressions: int
+    clicks: int
+    spend: Decimal
+    sales: Decimal
+    orders: int
+    currency: str
+    keywords: tuple[UnifiedAdKeyword, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class UnifiedAdCampaign:
+    """只读广告活动。V1 不提供创建、改价或暂停的平台写接口。"""
+
+    platform_campaign_id: str
+    name: str
+    campaign_type: str
+    status: str
+    currency: str
+    platform_sku_id: str | None
+    days: tuple[UnifiedAdDay, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +244,17 @@ class PlatformAdapter(ABC):
     ) -> PageResult[UnifiedOrder]: ...
 
     @abstractmethod
+    async def fetch_ads(
+        self,
+        cred: CredentialView,
+        *,
+        since: datetime,
+        until: datetime,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedAdCampaign]:
+        """拉取广告日报。只读，不改投放。"""
+
+    @abstractmethod
     def rate_limit(self) -> RateLimitSpec: ...
 
     @abstractmethod
@@ -303,6 +349,9 @@ __all__ = [
     "RateLimitSpec",
     "RemoteListing",
     "TokenBundle",
+    "UnifiedAdCampaign",
+    "UnifiedAdDay",
+    "UnifiedAdKeyword",
     "UnifiedFee",
     "UnifiedInventory",
     "UnifiedOrder",

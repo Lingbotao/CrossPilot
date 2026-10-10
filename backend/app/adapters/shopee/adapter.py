@@ -8,6 +8,17 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
+from app.adapters.ads_fields import (
+    build_campaign,
+    build_day,
+    build_keyword,
+    count_field,
+    currency_field,
+    day_field,
+    money_field,
+    optional_text,
+    text_field,
+)
 from app.adapters.base import (
     BatchResult,
     CredentialView,
@@ -19,6 +30,9 @@ from app.adapters.base import (
     RateLimitSpec,
     RemoteListing,
     TokenBundle,
+    UnifiedAdCampaign,
+    UnifiedAdDay,
+    UnifiedAdKeyword,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
@@ -26,6 +40,7 @@ from app.adapters.base import (
 )
 from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
+from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.oauth_parse import shopee_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.shipping import post_order_change, post_shipment
@@ -39,6 +54,9 @@ _TOKEN_PATH = "/api/v2/auth/token/get"
 _REFRESH_PATH = "/api/v2/auth/access_token/get"
 _ORDER_PATH = "/api/v2/order/get_order_list"
 _ORDER_DETAIL_PATH = "/api/v2/order/get_order_detail"
+_ADS_PATH = "/api/v2/ads/get_all_cpc_ads_daily_performance"
+_SHOPEE_STATUS = {"ONGOING": "ENABLED", "PAUSED": "PAUSED", "CLOSED": "ARCHIVED"}
+_SHOPEE_TYPE = {"PRODUCT": "SPONSORED_PRODUCT", "SHOP": "SPONSORED_BRAND"}
 _PUSH_ORDER = 3
 _PUSH_STOCK = 8
 _PUSH_CHAT = 10
@@ -120,6 +138,27 @@ class ShopeeAdapter(PlatformAdapter):
             url = f"{url}&cursor={quote(cursor, safe='')}"
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
         return _shopee_page(self, raw, cred)
+
+    async def fetch_ads(
+        self,
+        cred: CredentialView,
+        *,
+        since: datetime,
+        until: datetime,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedAdCampaign]:
+        del cred
+        partner_id, partner_key = app_credentials(self.platform)
+        timestamp = int(time.time())
+        sign = shopee_sign(partner_id=partner_id, partner_key=partner_key, path=_ADS_PATH, timestamp=timestamp)
+        url = (
+            f"{_HOST}{_ADS_PATH}?partner_id={partner_id}&timestamp={timestamp}&sign={sign}"
+            f"&start_date={since.date().isoformat()}&end_date={until.date().isoformat()}"
+        )
+        if cursor:
+            url = f"{url}&cursor={quote(cursor, safe='')}"
+        _status, raw = await self.transport.request("GET", url, platform=self.platform)
+        return _shopee_ads(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         partner_id, partner_key = app_credentials(self.platform)
@@ -292,6 +331,70 @@ def _shopee_page(adapter: ShopeeAdapter, raw: dict[str, Any], cred: CredentialVi
     status = str(raw.get("order_status") or "")
     order = shopee_order(raw, shop_id=cred.shop_id, unified_status=adapter.unified_status(status))
     return PageResult(items=[order], next_cursor=None)
+
+
+def _shopee_ads(raw: dict[str, Any]) -> PageResult[UnifiedAdCampaign]:
+    body = raw.get("response") if isinstance(raw.get("response"), dict) else None
+    rows = body.get("campaign_list") if isinstance(body, dict) else None
+    if not isinstance(rows, list) or not isinstance(body, dict):
+        raise AdapterError("Shopee 广告报表缺少 campaign_list", platform="shopee", decision=RetryDecision.FAIL_FAST)
+    items = [_shopee_campaign(row) for row in rows]
+    token = body.get("next_cursor")
+    return PageResult(items=items, next_cursor=str(token) if token else None)
+
+
+def _shopee_campaign(row: object) -> UnifiedAdCampaign:
+    if not isinstance(row, dict):
+        raise AdapterError("Shopee 广告活动不是对象", platform="shopee", decision=RetryDecision.FAIL_FAST)
+    metrics = row.get("metrics")
+    if not isinstance(metrics, list):
+        raise AdapterError("Shopee 广告日指标缺失", platform="shopee", decision=RetryDecision.FAIL_FAST)
+    status = str(row.get("campaign_status") or "").upper()
+    kind = str(row.get("campaign_type") or "").upper()
+    currency = currency_field(row.get("currency"), platform="shopee")
+    return build_campaign(
+        platform="shopee",
+        platform_campaign_id=text_field(row.get("campaign_id"), platform="shopee", field="campaign_id"),
+        name=text_field(row.get("ad_name"), platform="shopee", field="ad_name"),
+        campaign_type=_SHOPEE_TYPE.get(kind, "OTHER"),
+        status=_SHOPEE_STATUS.get(status, "UNKNOWN"),
+        currency=currency,
+        platform_sku_id=optional_text(row.get("item_id")),
+        days=tuple(_shopee_day(item, currency) for item in metrics),
+    )
+
+
+def _shopee_day(row: object, currency: str) -> UnifiedAdDay:
+    if not isinstance(row, dict):
+        raise AdapterError("Shopee 广告日指标不是对象", platform="shopee", decision=RetryDecision.FAIL_FAST)
+    keywords = row.get("keyword_list", [])
+    if not isinstance(keywords, list):
+        raise AdapterError("Shopee 关键词报表不是列表", platform="shopee", decision=RetryDecision.FAIL_FAST)
+    return build_day(
+        platform="shopee",
+        stat_date=day_field(row.get("date"), platform="shopee"),
+        impressions=count_field(row.get("impression"), platform="shopee", field="impression"),
+        clicks=count_field(row.get("click"), platform="shopee", field="click"),
+        spend=money_field(row.get("expense"), platform="shopee", field="expense"),
+        sales=money_field(row.get("broad_gmv"), platform="shopee", field="broad_gmv"),
+        orders=count_field(row.get("direct_order"), platform="shopee", field="direct_order"),
+        currency=currency,
+        keywords=tuple(_shopee_keyword(item) for item in keywords),
+    )
+
+
+def _shopee_keyword(row: object) -> UnifiedAdKeyword:
+    if not isinstance(row, dict):
+        raise AdapterError("Shopee 关键词不是对象", platform="shopee", decision=RetryDecision.FAIL_FAST)
+    return build_keyword(
+        platform="shopee",
+        keyword=text_field(row.get("keyword"), platform="shopee", field="keyword"),
+        impressions=count_field(row.get("impression"), platform="shopee", field="impression"),
+        clicks=count_field(row.get("click"), platform="shopee", field="click"),
+        spend=money_field(row.get("expense"), platform="shopee", field="expense"),
+        sales=money_field(row.get("broad_gmv"), platform="shopee", field="broad_gmv"),
+        orders=count_field(row.get("broad_order"), platform="shopee", field="broad_order"),
+    )
 
 
 __all__ = ["ShopeeAdapter"]

@@ -1,0 +1,158 @@
+{
+  "amazon": {
+    "campaigns": [
+      {
+        "campaignId": "amz-loss",
+        "name": "高花费马克杯",
+        "state": "ENABLED",
+        "adProduct": "SPONSORED_PRODUCTS",
+        "currency": "USD",
+        "sku": "MUG-1",
+        "metrics": [
+          {
+            "date": "2026-10-09",
+            "impressions": 1000,
+            "clicks": 50,
+            "cost": "30.000000",
+            "sales": "40.000000",
+            "purchases": 2,
+            "keywords": [
+              {
+                "keyword": "cheap mug",
+                "impressions": 400,
+                "clicks": 20,
+                "cost": "18.000000",
+                "sales": "0.000000",
+                "purchases": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "campaignId": "amz-ok",
+        "name": "稳定马克杯",
+        "state": "PAUSED",
+        "adProduct": "SPONSORED_BRANDS",
+        "currency": "USD",
+        "sku": "MUG-2",
+        "metrics": [
+          {
+            "date": "2026-10-09",
+            "impressions": 800,
+            "clicks": 40,
+            "cost": "4.000000",
+            "sales": "80.000000",
+            "purchases": 6,
+            "keywords": []
+          }
+        ]
+      }
+    ]
+  },
+  "shopee": {
+    "response": {
+      "campaign_list": [
+        {
+          "campaign_id": "sp-cpc-1",
+          "ad_name": "虾皮水杯",
+          "campaign_status": "ongoing",
+          "campaign_type": "product",
+          "currency": "MYR",
+          "item_id": "ITEM-9",
+          "metrics": [
+            {
+              "date": "2026-10-09",
+              "impression": 500,
+              "click": 25,
+              "expense": "6.500000",
+              "broad_gmv": "26.000000",
+              "direct_order": 1,
+              "keyword_list": [
+                {
+                  "keyword": "botol",
+                  "impression": 80,
+                  "click": 4,
+                  "expense": "2.000000",
+                  "broad_gmv": "0.000000",
+                  "broad_order": 0
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "next_cursor": ""
+    }
+  },
+  "lazada": {
+    "data": {
+      "campaigns": [
+        {
+          "campaignId": "lz-sp-1",
+          "campaignName": "Lazada 赞助",
+          "onlineStatus": 1,
+          "campaignType": "sponsored",
+          "currency": "SGD",
+          "skuId": "LZ-SKU",
+          "report": [
+            {
+              "date": "2026-10-09",
+              "impressions": 300,
+              "clicks": 12,
+              "spend": "3.200000",
+              "revenue": "16.000000",
+              "orders": 1,
+              "keywords": [
+                {
+                  "keyword": "bottle",
+                  "impressions": 40,
+                  "clicks": 2,
+                  "spend": "1.000000",
+                  "revenue": "0.000000",
+                  "orders": 0
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "page_token": null
+    }
+  },
+  "tiktok": {
+    "data": {
+      "list": [
+        {
+          "campaign_id": "tt-ads-1",
+          "campaign_name": "TikTok 短视频",
+          "operation_status": "ENABLE",
+          "objective_type": "PRODUCT_SALES",
+          "currency": "USD",
+          "sku_id": "TT-SKU",
+          "metrics": [
+            {
+              "stat_time_day": "2026-10-09",
+              "impressions": 2000,
+              "clicks": 80,
+              "spend": "15.000000",
+              "total_purchase_value": "90.000000",
+              "complete_payment": 4,
+              "keywords": [
+                {
+                  "keyword": "travel",
+                  "impressions": 100,
+                  "clicks": 5,
+                  "spend": "4.000000",
+                  "total_purchase_value": "0.000000",
+                  "complete_payment": 0
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "page_info": { "cursor": "" }
+    }
+  }
+}

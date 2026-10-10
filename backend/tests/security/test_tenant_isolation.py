@@ -1986,6 +1986,77 @@ def _assert_hidden(table: str, columns: str, values: str) -> None:
         _run(_delete(table, row_a))
 
 
+class TestAdsIsolation:
+    def test_tenant_cannot_read_another_tenants_ads(self, migrated: None) -> None:
+        base = 972000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        campaign_a, campaign_b = base + 2, base + 3
+        metric_a, metric_b = base + 4, base + 5
+        keyword_a, keyword_b = base + 6, base + 7
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) VALUES (:id, :tid, 'amazon', 'US', '广告店', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"ads-{shop_id}"},
+                    )
+                for campaign_id, tenant_id, shop_id in (
+                    (campaign_a, TENANT_A, shop_a),
+                    (campaign_b, TENANT_B, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO ad_campaign (id, tenant_id, shop_id, platform_code, platform_campaign_id, "
+                            "name, campaign_type, status, currency) "
+                            "VALUES (:id, :tid, :shop, 'amazon', :cid, '活动', 'SPONSORED_PRODUCT', 'ENABLED', 'USD')"
+                        ),
+                        {"id": campaign_id, "tid": tenant_id, "shop": shop_id, "cid": f"c-{campaign_id}"},
+                    )
+                for metric_id, tenant_id, campaign_id, shop_id in (
+                    (metric_a, TENANT_A, campaign_a, shop_a),
+                    (metric_b, TENANT_B, campaign_b, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO ad_metric_daily (id, tenant_id, stat_date, campaign_id, shop_id, "
+                            "impressions, clicks, orders, spend, sales, currency) "
+                            "VALUES (:id, :tid, '2026-10-09', :campaign, :shop, 10, 1, 0, 1, 0, 'USD')"
+                        ),
+                        {"id": metric_id, "tid": tenant_id, "campaign": campaign_id, "shop": shop_id},
+                    )
+                for keyword_id, tenant_id, campaign_id, shop_id in (
+                    (keyword_a, TENANT_A, campaign_a, shop_a),
+                    (keyword_b, TENANT_B, campaign_b, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO ad_keyword_metric (id, tenant_id, stat_date, campaign_id, shop_id, "
+                            "keyword, impressions, clicks, orders, spend, sales, currency) "
+                            "VALUES (:id, :tid, '2026-10-09', :campaign, :shop, 'mug', 10, 1, 0, 1, 0, 'USD')"
+                        ),
+                        {"id": keyword_id, "tid": tenant_id, "campaign": campaign_id, "shop": shop_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        for table, row_a, row_b in (
+            ("ad_campaign", campaign_a, campaign_b),
+            ("ad_metric_daily", metric_a, metric_b),
+            ("ad_keyword_metric", keyword_a, keyword_b),
+        ):
+            assert _run(_visible(table, row_a, row_b, TENANT_A)) == {row_a}
+            assert _run(_visible(table, row_a, row_b, TENANT_B)) == {row_b}
+            with pytest.raises(Exception):  # noqa: B017 - 应用角色没有 DELETE
+                _run(_delete(table, row_a))
+
+
 async def _visible(table: str, row_a: int, row_b: int, tenant_id: int) -> set[int]:
     engine, factory = _app_session()
     async with factory() as session:

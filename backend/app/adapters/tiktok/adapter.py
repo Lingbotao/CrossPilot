@@ -8,6 +8,17 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
+from app.adapters.ads_fields import (
+    build_campaign,
+    build_day,
+    build_keyword,
+    count_field,
+    currency_field,
+    day_field,
+    money_field,
+    optional_text,
+    text_field,
+)
 from app.adapters.base import (
     BatchResult,
     CredentialView,
@@ -19,6 +30,9 @@ from app.adapters.base import (
     RateLimitSpec,
     RemoteListing,
     TokenBundle,
+    UnifiedAdCampaign,
+    UnifiedAdDay,
+    UnifiedAdKeyword,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
@@ -26,6 +40,7 @@ from app.adapters.base import (
 )
 from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
+from app.adapters.errors import AdapterError, RetryDecision
 from app.adapters.oauth_parse import tiktok_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.shipping import post_order_change, post_shipment
@@ -39,6 +54,9 @@ _TOKEN_PATH = "/api/v2/token/get"
 _REFRESH_PATH = "/api/v2/token/refresh"
 _ORDER_PATH = "/order/202309/orders/search"
 _ORDER_DETAIL_PATH = "/order/202309/orders"
+_ADS_PATH = "/ads/202309/reports"
+_TIKTOK_STATUS = {"ENABLE": "ENABLED", "DISABLE": "PAUSED", "DELETE": "ARCHIVED"}
+_TIKTOK_TYPE = {"PRODUCT_SALES": "SPONSORED_PRODUCT"}
 _PUSH_ORDER = 1
 
 
@@ -127,6 +145,30 @@ class TikTokAdapter(PlatformAdapter):
             platform=self.platform,
         )
         return _tiktok_page(self, raw, cred)
+
+    async def fetch_ads(
+        self,
+        cred: CredentialView,
+        *,
+        since: datetime,
+        until: datetime,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedAdCampaign]:
+        del cred
+        app_key, secret = app_credentials(self.platform)
+        params = {"app_key": app_key, "timestamp": str(int(time.time()))}
+        params["sign"] = tiktok_sign(app_secret=secret, path=_ADS_PATH, params=params)
+        body: dict[str, Any] = {"start_date": since.date().isoformat(), "end_date": until.date().isoformat()}
+        if cursor:
+            body["page_token"] = cursor
+        _status, raw = await self.transport.request(
+            "POST",
+            f"{_API_HOST}{_ADS_PATH}",
+            params=params,
+            json_body=body,
+            platform=self.platform,
+        )
+        return _tiktok_ads(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         app_key, secret = app_credentials(self.platform)
@@ -288,6 +330,71 @@ def _named(bundle: TokenBundle, site_code: str) -> TokenBundle:
         platform_shop_id=shop_id,
         shop_name=f"TikTok Shop {site_code.upper()}",
         extra=bundle.extra,
+    )
+
+
+def _tiktok_ads(raw: dict[str, Any]) -> PageResult[UnifiedAdCampaign]:
+    body = raw.get("data") if isinstance(raw.get("data"), dict) else None
+    rows = body.get("list") if isinstance(body, dict) else None
+    if not isinstance(rows, list) or not isinstance(body, dict):
+        raise AdapterError("TikTok 广告报表缺少 list", platform="tiktok", decision=RetryDecision.FAIL_FAST)
+    items = [_tiktok_campaign(row) for row in rows]
+    page_info = body.get("page_info") if isinstance(body.get("page_info"), dict) else {}
+    token = page_info.get("cursor") if isinstance(page_info, dict) else None
+    return PageResult(items=items, next_cursor=str(token) if token else None)
+
+
+def _tiktok_campaign(row: object) -> UnifiedAdCampaign:
+    if not isinstance(row, dict):
+        raise AdapterError("TikTok 广告活动不是对象", platform="tiktok", decision=RetryDecision.FAIL_FAST)
+    metrics = row.get("metrics")
+    if not isinstance(metrics, list):
+        raise AdapterError("TikTok 广告日指标缺失", platform="tiktok", decision=RetryDecision.FAIL_FAST)
+    status = str(row.get("operation_status") or "").upper()
+    kind = str(row.get("objective_type") or "").upper()
+    currency = currency_field(row.get("currency"), platform="tiktok")
+    return build_campaign(
+        platform="tiktok",
+        platform_campaign_id=text_field(row.get("campaign_id"), platform="tiktok", field="campaign_id"),
+        name=text_field(row.get("campaign_name"), platform="tiktok", field="campaign_name"),
+        campaign_type=_TIKTOK_TYPE.get(kind, "OTHER"),
+        status=_TIKTOK_STATUS.get(status, "UNKNOWN"),
+        currency=currency,
+        platform_sku_id=optional_text(row.get("sku_id")),
+        days=tuple(_tiktok_day(item, currency) for item in metrics),
+    )
+
+
+def _tiktok_day(row: object, currency: str) -> UnifiedAdDay:
+    if not isinstance(row, dict):
+        raise AdapterError("TikTok 广告日指标不是对象", platform="tiktok", decision=RetryDecision.FAIL_FAST)
+    keywords = row.get("keywords", [])
+    if not isinstance(keywords, list):
+        raise AdapterError("TikTok 关键词报表不是列表", platform="tiktok", decision=RetryDecision.FAIL_FAST)
+    return build_day(
+        platform="tiktok",
+        stat_date=day_field(row.get("stat_time_day"), platform="tiktok"),
+        impressions=count_field(row.get("impressions"), platform="tiktok", field="impressions"),
+        clicks=count_field(row.get("clicks"), platform="tiktok", field="clicks"),
+        spend=money_field(row.get("spend"), platform="tiktok", field="spend"),
+        sales=money_field(row.get("total_purchase_value"), platform="tiktok", field="total_purchase_value"),
+        orders=count_field(row.get("complete_payment"), platform="tiktok", field="complete_payment"),
+        currency=currency,
+        keywords=tuple(_tiktok_keyword(item) for item in keywords),
+    )
+
+
+def _tiktok_keyword(row: object) -> UnifiedAdKeyword:
+    if not isinstance(row, dict):
+        raise AdapterError("TikTok 关键词不是对象", platform="tiktok", decision=RetryDecision.FAIL_FAST)
+    return build_keyword(
+        platform="tiktok",
+        keyword=text_field(row.get("keyword"), platform="tiktok", field="keyword"),
+        impressions=count_field(row.get("impressions"), platform="tiktok", field="impressions"),
+        clicks=count_field(row.get("clicks"), platform="tiktok", field="clicks"),
+        spend=money_field(row.get("spend"), platform="tiktok", field="spend"),
+        sales=money_field(row.get("total_purchase_value"), platform="tiktok", field="total_purchase_value"),
+        orders=count_field(row.get("complete_payment"), platform="tiktok", field="complete_payment"),
     )
 
 

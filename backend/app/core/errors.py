@@ -6,7 +6,7 @@
 |-------|-------------|---------------------------------------------------|
 | 10xxx | 通用        | 10001 参数校验失败，10002 资源不存在              |
 | 20xxx | 认证与租户  | 20001 未登录，20002 权限不足，20003 租户已停用    |
-| 30xxx | 平台与同步  | 30001 平台不支持，30002 授权失败，30003 平台限流  |
+| 30xxx | 平台与同步  | 30001 平台不支持，30002 授权失败，30008 广告报表无法解析 |
 | 40xxx | 商品        | 40001 SKU 编码重复，40007 批次超过 500，40009 导入行错误 |
 | 50xxx | 订单        | 50001 订单不存在，50002 状态不允许该操作          |
 | 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60008 采购状态不允许，60009 收货数量不合法 |
@@ -58,6 +58,7 @@ class ErrorCode(IntEnum):
     PLATFORM_CREDENTIAL_EXPIRED = 30005
     SYNC_TASK_FAILED = 30006
     WEBHOOK_REJECTED = 30007
+    ADS_REPORT_INVALID = 30008
 
     # ---- 40xxx 商品 ----
     SKU_CODE_DUPLICATED = 40001
@@ -143,6 +144,7 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.PLATFORM_CREDENTIAL_EXPIRED: 401,
     ErrorCode.SYNC_TASK_FAILED: 500,
     ErrorCode.WEBHOOK_REJECTED: 401,
+    ErrorCode.ADS_REPORT_INVALID: 502,
     ErrorCode.SKU_CODE_DUPLICATED: 409,
     ErrorCode.COMPLIANCE_CHECK_FAILED: 400,
     ErrorCode.LISTING_STATE_INVALID: 409,
@@ -348,6 +350,11 @@ class SettlementFileInvalidError(AppError):
     message = "结算文件无法解析"
 
 
+class AdsReportInvalidError(AppError):
+    code = ErrorCode.ADS_REPORT_INVALID
+    message = "广告报表无法解析"
+
+
 class HSCodeMissingError(AppError):
     code = ErrorCode.HS_CODE_MISSING
     message = "缺失 HS 编码"
@@ -355,6 +362,7 @@ class HSCodeMissingError(AppError):
 
 __all__ = [
     "AccountLockedError",
+    "AdsReportInvalidError",
     "AppError",
     "ComplianceError",
     "ConflictError",

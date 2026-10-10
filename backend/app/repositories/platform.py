@@ -34,6 +34,17 @@ class ShopRepository(BaseRepository[Shop]):
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def list_active_across_tenants(self) -> list[tuple[int, int, str]]:
+        """Beat 扫描全部仍在授权中的店铺。语句显式跳过租户过滤，只给系统任务用。"""
+        stmt = (
+            select(Shop.tenant_id, Shop.id, Shop.platform_code)
+            .where(Shop.deleted_at.is_(None), Shop.status == int(ShopStatus.ACTIVE))
+            .order_by(Shop.id.asc())
+            .execution_options(**{SKIP_FLAG: True})
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [(int(tenant_id), int(shop_id), str(platform_code)) for tenant_id, shop_id, platform_code in rows]
+
     async def list_active_identities(self, *, platform_code: str, platform_shop_id: str) -> list[tuple[int, int]]:
         """跨租户找出仍在授权中的店铺。只给 Webhook 入站用，语句显式跳过租户过滤。"""
         stmt = (
@@ -95,6 +106,13 @@ class SyncTaskRepository(BaseRepository[SyncTask]):
             stmt = stmt.where(SyncTask.created_at <= created_to)
         stmt = stmt.order_by(SyncTask.id.desc()).limit(limit + 1)
         return list((await self.session.execute(stmt)).scalars().all())
+
+    async def find_by_idempotency(self, module: str, key: str) -> SyncTask | None:
+        stmt = self.base_select().where(
+            SyncTask.module == module,
+            SyncTask.stats["idempotency_key"].astext == key,
+        )
+        return (await self.session.execute(stmt)).scalars().first()
 
 
 class PlatformApiLogRepository(BaseRepository[PlatformApiLog]):

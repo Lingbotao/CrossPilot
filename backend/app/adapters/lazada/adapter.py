@@ -8,6 +8,17 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
+from app.adapters.ads_fields import (
+    build_campaign,
+    build_day,
+    build_keyword,
+    count_field,
+    currency_field,
+    day_field,
+    money_field,
+    optional_text,
+    text_field,
+)
 from app.adapters.base import (
     BatchResult,
     CredentialView,
@@ -19,6 +30,9 @@ from app.adapters.base import (
     RateLimitSpec,
     RemoteListing,
     TokenBundle,
+    UnifiedAdCampaign,
+    UnifiedAdDay,
+    UnifiedAdKeyword,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
@@ -47,6 +61,9 @@ _TOKEN_PATH = "/rest/auth/token/create"
 _REFRESH_PATH = "/rest/auth/token/refresh"
 _ORDERS_PATH = "/orders/get"
 _ORDER_DETAIL_PATH = "/order/get"
+_ADS_PATH = "/ads/campaign/get"
+_LAZADA_STATUS = {1: "ENABLED", 0: "PAUSED", 9: "ARCHIVED"}
+_LAZADA_TYPE = {"SPONSORED": "SPONSORED_PRODUCT"}
 _PUSH_ORDER = 0
 
 
@@ -143,6 +160,29 @@ class LazadaAdapter(PlatformAdapter):
             platform=self.platform,
         )
         return _lazada_page(self, raw, cred)
+
+    async def fetch_ads(
+        self,
+        cred: CredentialView,
+        *,
+        since: datetime,
+        until: datetime,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedAdCampaign]:
+        app_key, secret = app_credentials(self.platform)
+        params = {
+            "app_key": app_key,
+            "sign_method": "sha256",
+            "timestamp": str(int(time.time() * 1000)),
+            "start_date": since.date().isoformat(),
+            "end_date": until.date().isoformat(),
+        }
+        if cursor:
+            params["page_token"] = cursor
+        params["sign"] = lazada_sign(app_secret=secret, path=_ADS_PATH, params=params)
+        host = LAZADA_AUTH_HOST[cred.site_code.upper()]
+        _status, raw = await self.transport.request("GET", f"{host}{_ADS_PATH}", params=params, platform=self.platform)
+        return _lazada_ads(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         app_key, secret = app_credentials(self.platform)
@@ -323,6 +363,70 @@ def _named(bundle: TokenBundle, site_code: str) -> TokenBundle:
         platform_shop_id=shop_id,
         shop_name=f"Lazada {site_code.upper()}",
         extra=bundle.extra,
+    )
+
+
+def _lazada_ads(raw: dict[str, Any]) -> PageResult[UnifiedAdCampaign]:
+    body = raw.get("data") if isinstance(raw.get("data"), dict) else None
+    rows = body.get("campaigns") if isinstance(body, dict) else None
+    if not isinstance(rows, list) or not isinstance(body, dict):
+        raise AdapterError("Lazada 广告报表缺少 campaigns", platform="lazada", decision=RetryDecision.FAIL_FAST)
+    items = [_lazada_campaign(row) for row in rows]
+    token = body.get("page_token")
+    return PageResult(items=items, next_cursor=str(token) if token else None)
+
+
+def _lazada_campaign(row: object) -> UnifiedAdCampaign:
+    if not isinstance(row, dict):
+        raise AdapterError("Lazada 广告活动不是对象", platform="lazada", decision=RetryDecision.FAIL_FAST)
+    report = row.get("report")
+    if not isinstance(report, list):
+        raise AdapterError("Lazada 广告日指标缺失", platform="lazada", decision=RetryDecision.FAIL_FAST)
+    online = row.get("onlineStatus")
+    kind = str(row.get("campaignType") or "").upper()
+    currency = currency_field(row.get("currency"), platform="lazada")
+    return build_campaign(
+        platform="lazada",
+        platform_campaign_id=text_field(row.get("campaignId"), platform="lazada", field="campaignId"),
+        name=text_field(row.get("campaignName"), platform="lazada", field="campaignName"),
+        campaign_type=_LAZADA_TYPE.get(kind, "OTHER"),
+        status=_LAZADA_STATUS.get(online, "UNKNOWN") if isinstance(online, int) else "UNKNOWN",
+        currency=currency,
+        platform_sku_id=optional_text(row.get("skuId")),
+        days=tuple(_lazada_day(item, currency) for item in report),
+    )
+
+
+def _lazada_day(row: object, currency: str) -> UnifiedAdDay:
+    if not isinstance(row, dict):
+        raise AdapterError("Lazada 广告日指标不是对象", platform="lazada", decision=RetryDecision.FAIL_FAST)
+    keywords = row.get("keywords", [])
+    if not isinstance(keywords, list):
+        raise AdapterError("Lazada 关键词报表不是列表", platform="lazada", decision=RetryDecision.FAIL_FAST)
+    return build_day(
+        platform="lazada",
+        stat_date=day_field(row.get("date"), platform="lazada"),
+        impressions=count_field(row.get("impressions"), platform="lazada", field="impressions"),
+        clicks=count_field(row.get("clicks"), platform="lazada", field="clicks"),
+        spend=money_field(row.get("spend"), platform="lazada", field="spend"),
+        sales=money_field(row.get("revenue"), platform="lazada", field="revenue"),
+        orders=count_field(row.get("orders"), platform="lazada", field="orders"),
+        currency=currency,
+        keywords=tuple(_lazada_keyword(item) for item in keywords),
+    )
+
+
+def _lazada_keyword(row: object) -> UnifiedAdKeyword:
+    if not isinstance(row, dict):
+        raise AdapterError("Lazada 关键词不是对象", platform="lazada", decision=RetryDecision.FAIL_FAST)
+    return build_keyword(
+        platform="lazada",
+        keyword=text_field(row.get("keyword"), platform="lazada", field="keyword"),
+        impressions=count_field(row.get("impressions"), platform="lazada", field="impressions"),
+        clicks=count_field(row.get("clicks"), platform="lazada", field="clicks"),
+        spend=money_field(row.get("spend"), platform="lazada", field="spend"),
+        sales=money_field(row.get("revenue"), platform="lazada", field="revenue"),
+        orders=count_field(row.get("orders"), platform="lazada", field="orders"),
     )
 
 

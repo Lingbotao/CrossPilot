@@ -16,6 +16,7 @@ from app.services.order_sync import OrderSyncService, SyncRun
 from app.sync_engine.errors import StoreUnavailable
 from app.sync_engine.locks import (
     BEAT_REFRESH_CREDENTIALS,
+    BEAT_SCAN_ADS,
     BEAT_SCAN_DEAD_LETTER,
     BEAT_SCAN_DUE_SHOPS,
     BEAT_SCAN_LISTING_DIFFS,
@@ -216,6 +217,57 @@ async def _scan_listing_diffs() -> dict[str, Any]:
     for tenant_id in tenant_ids:
         patrol_listing_diffs.delay(tenant_id)
     return {"tenants": len(tenant_ids)}
+
+
+async def _sync_shop_ads(shop_id: int, tenant_id: int, trigger: str) -> dict[str, Any]:
+    from app.db.session import session_scope
+    from app.models.enums import SyncTrigger
+    from app.schemas.ads import AdsSyncRequest
+    from app.services.ads import AdsService
+
+    kind = SyncTrigger.MANUAL if trigger == "manual" else SyncTrigger.SCHEDULED
+    async with session_scope(tenant_id) as session:
+        view = await AdsService(session).sync(
+            AdsSyncRequest(shop_id=shop_id),
+            tenant_id=tenant_id,
+            actor_id=None,
+            idempotency_key=None,
+            trigger=kind,
+        )
+    return view.model_dump()
+
+
+@celery_app.task(name="sync.shop_ads")
+def sync_shop_ads(
+    shop_id: int,
+    tenant_id: int,
+    trigger: str = "beat",
+    platform: str | None = None,
+) -> dict[str, Any]:
+    """同步一个店铺的广告。必须显式传入 tenant_id。只读，不改投放。"""
+    del platform
+    configure_logging()
+    with tenant_context(tenant_id):
+        return asyncio.run(_sync_shop_ads(shop_id, tenant_id, trigger))
+
+
+async def _scan_ads() -> dict[str, Any]:
+    from app.db.session import owner_session_scope
+    from app.repositories.platform import ShopRepository
+
+    async with owner_session_scope() as session:
+        shops = await ShopRepository(session).list_active_across_tenants()
+    for tenant_id, shop_id, platform in shops:
+        sync_shop_ads.delay(shop_id, tenant_id, trigger="beat", platform=platform)
+    log.info("ads_scan_enqueued", shops=len(shops))
+    return {"shops": len(shops)}
+
+
+@celery_app.task(name="sync.scan_ads")
+def scan_ads() -> dict[str, Any]:
+    """按配置间隔找出仍在授权中的店铺，再按租户入队广告拉取。"""
+    configure_logging()
+    return asyncio.run(run_beat_singleton(BEAT_SCAN_ADS, _scan_ads))
 
 
 @celery_app.task(name="sync.scan_listing_diffs")

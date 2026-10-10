@@ -158,6 +158,15 @@ class ListingRepository(BaseRepository[Listing]):
         stmt = self.base_select().where(Listing.id.in_(entity_ids))
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def linked_sku_id(self, shop_id: int, platform_sku_id: str) -> int | None:
+        stmt = self.base_select().where(
+            Listing.shop_id == shop_id,
+            Listing.platform_sku_id == platform_sku_id,
+            Listing.status == "LINKED",
+        )
+        row = (await self.session.execute(stmt)).scalars().first()
+        return None if row is None else int(row.sku_id)
+
     async def list_linked(self, *, limit: int) -> list[Listing]:
         stmt = self.base_select().where(Listing.status == "LINKED").order_by(Listing.id.asc()).limit(limit)
         return list((await self.session.execute(stmt)).scalars().all())

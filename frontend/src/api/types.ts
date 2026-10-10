@@ -66,6 +66,7 @@ export const ErrorCode = {
   PLATFORM_CREDENTIAL_EXPIRED: 30005,
   SYNC_TASK_FAILED: 30006,
   WEBHOOK_REJECTED: 30007,
+  ADS_REPORT_INVALID: 30008,
 
   // 40xxx 商品
   SKU_CODE_DUPLICATED: 40001,
@@ -1996,4 +1997,132 @@ export interface ReplenishmentConvert {
   currency: string;
   window_days?: number;
   unit_price?: string | null;
+}
+
+export interface AdsSyncRequest {
+  shop_id: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface AdsSyncView {
+  task_id: string;
+  shop_id: string;
+  campaigns: number;
+  days: number;
+  keywords: number;
+  loss_count: number;
+}
+
+export interface AdsTotalView {
+  currency: string;
+  spend: string | null;
+  sales: string | null;
+  acos: string | null;
+  roas: string | null;
+}
+
+export interface AdsOverviewView {
+  impressions: number;
+  clicks: number;
+  orders: number;
+  ctr: string | null;
+  cvr: string | null;
+  totals: AdsTotalView[];
+}
+
+export interface AdsCampaignView {
+  id: string;
+  shop_id: string;
+  platform_code: string;
+  platform_campaign_id: string;
+  name: string;
+  campaign_type: string;
+  status: string;
+  currency: string;
+  sku_id: string | null;
+  impressions: number;
+  clicks: number;
+  orders: number;
+  ctr: string | null;
+  cvr: string | null;
+  spend: string | null;
+  sales: string | null;
+  acos: string | null;
+  roas: string | null;
+  loss_flag: boolean;
+}
+
+export interface AdsDayView {
+  stat_date: string;
+  impressions: number;
+  clicks: number;
+  orders: number;
+  ctr: string | null;
+  cvr: string | null;
+  spend: string | null;
+  sales: string | null;
+  acos: string | null;
+  roas: string | null;
+  gross_margin: string | null;
+  loss_flag: boolean;
+  suggestion_code: string;
+}
+
+export interface AdsCampaignDetail {
+  campaign: AdsCampaignView;
+  days: AdsDayView[];
+}
+
+export interface AdsKeywordView {
+  id: string;
+  campaign_id: string;
+  campaign_name: string;
+  platform_code: string;
+  stat_date: string;
+  keyword: string;
+  impressions: number;
+  clicks: number;
+  orders: number;
+  currency: string;
+  spend: string | null;
+  sales: string | null;
+  suggest_negative: boolean;
+}
+
+export interface AdsLossView {
+  id: string;
+  campaign_id: string;
+  campaign_name: string;
+  platform_code: string;
+  shop_id: string;
+  stat_date: string;
+  currency: string;
+  spend: string;
+  sales: string;
+  acos: string | null;
+  gross_margin: string | null;
+  suggestion_code: string;
+}
+
+export interface AdsSkuProfitView {
+  sku_id: string | null;
+  currency: string;
+  actual_spend: string;
+  estimated_ads: string | null;
+  net_profit: string | null;
+  net_after_ads: string | null;
+  formula: string;
+  complete: boolean;
+}
+
+export interface AdsQuery {
+  date_from: string;
+  date_to: string;
+  shop_id?: string;
+  platform_code?: string;
+  campaign_id?: string;
+  cursor?: string;
+  limit?: number;
+  only_negative?: boolean;
 }
