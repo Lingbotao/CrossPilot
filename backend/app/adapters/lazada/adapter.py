@@ -33,6 +33,7 @@ from app.adapters.base import (
     UnifiedAdCampaign,
     UnifiedAdDay,
     UnifiedAdKeyword,
+    UnifiedMessage,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
@@ -41,6 +42,7 @@ from app.adapters.base import (
 from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError, RetryDecision
+from app.adapters.messages import parse_lazada_messages
 from app.adapters.oauth_parse import lazada_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.shipping import post_order_change, post_shipment
@@ -62,6 +64,7 @@ _REFRESH_PATH = "/rest/auth/token/refresh"
 _ORDERS_PATH = "/orders/get"
 _ORDER_DETAIL_PATH = "/order/get"
 _ADS_PATH = "/ads/campaign/get"
+_MESSAGES_PATH = "/im/message/list"
 _LAZADA_STATUS = {1: "ENABLED", 0: "PAUSED", 9: "ARCHIVED"}
 _LAZADA_TYPE = {"SPONSORED": "SPONSORED_PRODUCT"}
 _PUSH_ORDER = 0
@@ -183,6 +186,30 @@ class LazadaAdapter(PlatformAdapter):
         host = LAZADA_AUTH_HOST[cred.site_code.upper()]
         _status, raw = await self.transport.request("GET", f"{host}{_ADS_PATH}", params=params, platform=self.platform)
         return _lazada_ads(raw)
+
+    async def fetch_messages(
+        self,
+        cred: CredentialView,
+        *,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedMessage]:
+        app_key, secret = app_credentials(self.platform)
+        params = {
+            "app_key": app_key,
+            "sign_method": "sha256",
+            "timestamp": str(int(time.time() * 1000)),
+        }
+        if cursor:
+            params["page_token"] = cursor
+        params["sign"] = lazada_sign(app_secret=secret, path=_MESSAGES_PATH, params=params)
+        host = LAZADA_AUTH_HOST[cred.site_code.upper()]
+        _status, raw = await self.transport.request(
+            "GET",
+            f"{host}{_MESSAGES_PATH}",
+            params=params,
+            platform=self.platform,
+        )
+        return parse_lazada_messages(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         app_key, secret = app_credentials(self.platform)

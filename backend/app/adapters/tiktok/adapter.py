@@ -33,6 +33,7 @@ from app.adapters.base import (
     UnifiedAdCampaign,
     UnifiedAdDay,
     UnifiedAdKeyword,
+    UnifiedMessage,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
@@ -41,6 +42,7 @@ from app.adapters.base import (
 from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError, RetryDecision
+from app.adapters.messages import parse_tiktok_messages
 from app.adapters.oauth_parse import tiktok_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.shipping import post_order_change, post_shipment
@@ -55,6 +57,7 @@ _REFRESH_PATH = "/api/v2/token/refresh"
 _ORDER_PATH = "/order/202309/orders/search"
 _ORDER_DETAIL_PATH = "/order/202309/orders"
 _ADS_PATH = "/ads/202309/reports"
+_MESSAGES_PATH = "/customer_service/202309/messages"
 _TIKTOK_STATUS = {"ENABLE": "ENABLED", "DISABLE": "PAUSED", "DELETE": "ARCHIVED"}
 _TIKTOK_TYPE = {"PRODUCT_SALES": "SPONSORED_PRODUCT"}
 _PUSH_ORDER = 1
@@ -169,6 +172,28 @@ class TikTokAdapter(PlatformAdapter):
             platform=self.platform,
         )
         return _tiktok_ads(raw)
+
+    async def fetch_messages(
+        self,
+        cred: CredentialView,
+        *,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedMessage]:
+        del cred
+        app_key, secret = app_credentials(self.platform)
+        params = {"app_key": app_key, "timestamp": str(int(time.time()))}
+        params["sign"] = tiktok_sign(app_secret=secret, path=_MESSAGES_PATH, params=params)
+        body: dict[str, Any] = {}
+        if cursor:
+            body["page_token"] = cursor
+        _status, raw = await self.transport.request(
+            "POST",
+            f"{_API_HOST}{_MESSAGES_PATH}",
+            params=params,
+            json_body=body,
+            platform=self.platform,
+        )
+        return parse_tiktok_messages(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         app_key, secret = app_credentials(self.platform)

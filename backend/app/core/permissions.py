@@ -95,6 +95,9 @@ class Perm(StrEnum):
     REPORT_EXPORT = "report:export"
     # 看板
     DASHBOARD_READ = "dashboard:read"
+    # 客服
+    CS_READ = "cs:read"
+    CS_WRITE = "cs:write"
     # 系统
     AUDIT_READ = "audit:read"
     SYSTEM_READ = "system:read"
@@ -129,6 +132,8 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.FINANCE_READ,  # 👁 只读
             Perm.REPORT_EXPORT,
             Perm.DASHBOARD_READ,
+            Perm.CS_READ,
+            Perm.CS_WRITE,
         }
     ),
     RoleCode.OPS_STAFF: frozenset(
@@ -147,6 +152,8 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.LANDED_COST_READ,
             Perm.LANDED_COST_CALC,
             Perm.DASHBOARD_READ,
+            Perm.CS_READ,
+            Perm.CS_WRITE,
         }
     ),
     RoleCode.PURCHASER: frozenset(
@@ -184,6 +191,8 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.ORDER_READ,
             Perm.ORDER_SHIP,  # ⚠️ 部分受限（受数据范围约束）
             Perm.ORDER_WRITE,
+            Perm.CS_READ,
+            Perm.CS_WRITE,
         }
     ),
     RoleCode.VIEWER: frozenset(
@@ -196,6 +205,7 @@ ROLE_PERMISSIONS: Final[dict[RoleCode, frozenset[Perm]]] = {
             Perm.COMPLIANCE_READ,
             Perm.FINANCE_READ,
             Perm.DASHBOARD_READ,
+            Perm.CS_READ,
         }
     ),
 }

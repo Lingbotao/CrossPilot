@@ -39,6 +39,7 @@ celery_app = Celery(
         "app.tasks.batch",
         "app.tasks.report",
         "app.tasks.dashboard",
+        "app.tasks.cs",
         "app.tasks.inventory",
         "app.tasks.compliance",
         "app.tasks.finance",
@@ -110,6 +111,11 @@ celery_app.conf.beat_schedule = {
     "beat-scan-dashboard": {
         "task": "dashboard.scan_rebuild",
         "schedule": timedelta(seconds=settings.dashboard_refresh_seconds),
+    },
+    # 客服消息。间隔来自 CS_SYNC_SECONDS，默认 5 分钟。
+    "beat-scan-cs": {
+        "task": "cs.scan_messages",
+        "schedule": timedelta(seconds=settings.cs_sync_seconds),
     },
 }
 

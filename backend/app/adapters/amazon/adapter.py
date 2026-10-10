@@ -39,6 +39,7 @@ from app.adapters.base import (
     UnifiedAdCampaign,
     UnifiedAdDay,
     UnifiedAdKeyword,
+    UnifiedMessage,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
@@ -46,6 +47,7 @@ from app.adapters.base import (
 from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError, RetryDecision
+from app.adapters.messages import parse_amazon_messages
 from app.adapters.oauth_parse import amazon_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.shipping import post_order_change, post_shipment
@@ -57,6 +59,7 @@ from app.adapters.webhook_common import load_object, matching_order
 _TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 _ORDERS_URL = "https://sellingpartnerapi-na.amazon.com/orders/v0/orders"
 _ADS_URL = "https://advertising-api.amazon.com/ads/campaigns"
+_MESSAGES_URL = "https://sellingpartnerapi-na.amazon.com/messaging/v1/messages"
 _AMAZON_STATUS = {"ENABLED": "ENABLED", "PAUSED": "PAUSED", "ARCHIVED": "ARCHIVED"}
 _AMAZON_TYPE = {
     "SPONSORED_PRODUCTS": "SPONSORED_PRODUCT",
@@ -151,6 +154,19 @@ class AmazonAdapter(PlatformAdapter):
             url = f"{url}&nextToken={quote(cursor, safe='')}"
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
         return _amazon_ads(raw)
+
+    async def fetch_messages(
+        self,
+        cred: CredentialView,
+        *,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedMessage]:
+        del cred
+        url = _MESSAGES_URL
+        if cursor:
+            url = f"{url}?nextToken={quote(cursor, safe='')}"
+        _status, raw = await self.transport.request("GET", url, platform=self.platform)
+        return parse_amazon_messages(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         url = f"{_ORDERS_URL}/{quote(platform_order_id, safe='')}"

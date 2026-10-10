@@ -81,6 +81,8 @@ class ErrorCode(IntEnum):
     BATCH_SHIP_PARTIAL_FAILED = 50003
     ORDER_PLATFORM_REJECTED = 50005
     RETURN_STATE_INVALID = 50006
+    CS_TEMPLATE_DUPLICATED = 50007
+    CS_TICKET_STATE_INVALID = 50008
 
     # ---- 60xxx 库存 ----
     INVENTORY_INSUFFICIENT = 60001
@@ -163,6 +165,8 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.BATCH_SHIP_PARTIAL_FAILED: 207,
     ErrorCode.ORDER_PLATFORM_REJECTED: 502,
     ErrorCode.RETURN_STATE_INVALID: 409,
+    ErrorCode.CS_TEMPLATE_DUPLICATED: 409,
+    ErrorCode.CS_TICKET_STATE_INVALID: 409,
     ErrorCode.INVENTORY_INSUFFICIENT: 409,
     ErrorCode.INVENTORY_SYNC_FAILED: 502,
     ErrorCode.INVENTORY_CONFLICT: 409,
@@ -348,6 +352,16 @@ class ExchangeRateOverlapError(AppError):
 class SettlementFileInvalidError(AppError):
     code = ErrorCode.SETTLEMENT_FILE_INVALID
     message = "结算文件无法解析"
+
+
+class CsTemplateDuplicateError(AppError):
+    code = ErrorCode.CS_TEMPLATE_DUPLICATED
+    message = "回复模板已存在"
+
+
+class CsTicketStateError(AppError):
+    code = ErrorCode.CS_TICKET_STATE_INVALID
+    message = "工单当前状态不能执行该操作"
 
 
 class AdsReportInvalidError(AppError):

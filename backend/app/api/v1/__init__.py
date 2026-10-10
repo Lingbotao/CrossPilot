@@ -16,6 +16,7 @@ from app.api.v1 import (
     audit,
     auth,
     compliance,
+    cs,
     dashboard,
     hs_codes,
     inventory,
@@ -60,6 +61,7 @@ api_router.include_router(purchase.orders)
 api_router.include_router(purchase.transit)
 api_router.include_router(purchase.shipments)
 api_router.include_router(ads.router)
+api_router.include_router(cs.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(webhooks.router)
 

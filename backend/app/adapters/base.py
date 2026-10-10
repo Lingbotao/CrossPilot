@@ -100,6 +100,21 @@ class UnifiedAdDay:
 
 
 @dataclass(frozen=True, slots=True)
+class UnifiedMessage:
+    """只读买家消息。站内回复不在 V1 契约里。"""
+
+    platform_message_id: str
+    platform_order_id: str | None
+    buyer_id: str | None
+    buyer_name: str | None
+    content: str
+    lang: str | None
+    received_at: datetime
+    sla_deadline: datetime | None
+    console_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class UnifiedAdCampaign:
     """只读广告活动。V1 不提供创建、改价或暂停的平台写接口。"""
 
@@ -284,7 +299,7 @@ class PlatformAdapter(ABC):
     async def fetch_inventory(self, cred: CredentialView, *, sku_ids: list[str]) -> list[UnifiedInventory]:
         raise self._later("M3", cred)
 
-    async def fetch_messages(self, cred: CredentialView, *, cursor: str | None = None) -> PageResult[dict[str, Any]]:
+    async def fetch_messages(self, cred: CredentialView, *, cursor: str | None = None) -> PageResult[UnifiedMessage]:
         """V1 只读客服提醒。站内回复不在本契约里。"""
         raise self._later("M5", cred)
 

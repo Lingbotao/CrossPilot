@@ -33,6 +33,7 @@ from app.adapters.base import (
     UnifiedAdCampaign,
     UnifiedAdDay,
     UnifiedAdKeyword,
+    UnifiedMessage,
     UnifiedOrder,
     UnifiedProduct,
     WebhookEvent,
@@ -41,6 +42,7 @@ from app.adapters.base import (
 from app.adapters.catalog import fetch_remote_listing, publish_listing, update_listing_prices, update_remote_inventory
 from app.adapters.credentials import app_credentials
 from app.adapters.errors import AdapterError, RetryDecision
+from app.adapters.messages import parse_shopee_messages
 from app.adapters.oauth_parse import shopee_order, token_bundle
 from app.adapters.quotas import quota_for
 from app.adapters.shipping import post_order_change, post_shipment
@@ -55,6 +57,7 @@ _REFRESH_PATH = "/api/v2/auth/access_token/get"
 _ORDER_PATH = "/api/v2/order/get_order_list"
 _ORDER_DETAIL_PATH = "/api/v2/order/get_order_detail"
 _ADS_PATH = "/api/v2/ads/get_all_cpc_ads_daily_performance"
+_MESSAGES_PATH = "/api/v2/sellerchat/get_message"
 _SHOPEE_STATUS = {"ONGOING": "ENABLED", "PAUSED": "PAUSED", "CLOSED": "ARCHIVED"}
 _SHOPEE_TYPE = {"PRODUCT": "SPONSORED_PRODUCT", "SHOP": "SPONSORED_BRAND"}
 _PUSH_ORDER = 3
@@ -159,6 +162,22 @@ class ShopeeAdapter(PlatformAdapter):
             url = f"{url}&cursor={quote(cursor, safe='')}"
         _status, raw = await self.transport.request("GET", url, platform=self.platform)
         return _shopee_ads(raw)
+
+    async def fetch_messages(
+        self,
+        cred: CredentialView,
+        *,
+        cursor: str | None = None,
+    ) -> PageResult[UnifiedMessage]:
+        del cred
+        partner_id, partner_key = app_credentials(self.platform)
+        timestamp = int(time.time())
+        sign = shopee_sign(partner_id=partner_id, partner_key=partner_key, path=_MESSAGES_PATH, timestamp=timestamp)
+        url = f"{_HOST}{_MESSAGES_PATH}?partner_id={partner_id}&timestamp={timestamp}&sign={sign}"
+        if cursor:
+            url = f"{url}&cursor={quote(cursor, safe='')}"
+        _status, raw = await self.transport.request("GET", url, platform=self.platform)
+        return parse_shopee_messages(raw)
 
     async def fetch_order(self, cred: CredentialView, platform_order_id: str) -> UnifiedOrder | None:
         partner_id, partner_key = app_credentials(self.platform)

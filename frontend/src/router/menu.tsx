@@ -10,6 +10,7 @@ import {
   AuditOutlined,
   BarChartOutlined,
   DashboardOutlined,
+  CustomerServiceOutlined,
   FundOutlined,
   GlobalOutlined,
   InboxOutlined,
@@ -51,6 +52,9 @@ import { LocalePage } from '@/pages/products/LocalePage';
 import { ProductDetailPage } from '@/pages/products/ProductDetailPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { PublishPage } from '@/pages/products/PublishPage';
+import { CsMessagesPage } from '@/pages/cs/CsMessagesPage';
+import { CsTemplatesPage } from '@/pages/cs/CsTemplatesPage';
+import { CsTicketsPage } from '@/pages/cs/CsTicketsPage';
 import { AnalyticsAdsPage } from '@/pages/analytics/AnalyticsAdsPage';
 import { AnalyticsCostsPage } from '@/pages/analytics/AnalyticsCostsPage';
 import { AnalyticsFulfillmentPage } from '@/pages/analytics/AnalyticsFulfillmentPage';
@@ -572,6 +576,47 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
         milestone: 'M5（Week 10–11）',
         delivered: true,
         component: AdsLossPage,
+      },
+    ],
+  },
+  {
+    key: 'cs',
+    path: '/cs',
+    label: zhCN.menu.cs,
+    icon: <CustomerServiceOutlined />,
+    permission: Perm.CS_READ,
+    milestone: 'M5（Week 10–11）',
+    delivered: false,
+    children: [
+      {
+        key: 'cs-messages',
+        path: '/cs/messages',
+        label: zhCN.menu.csMessages,
+        icon: null,
+        permission: Perm.CS_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: CsMessagesPage,
+      },
+      {
+        key: 'cs-templates',
+        path: '/cs/templates',
+        label: zhCN.menu.csTemplates,
+        icon: null,
+        permission: Perm.CS_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: CsTemplatesPage,
+      },
+      {
+        key: 'cs-tickets',
+        path: '/cs/tickets',
+        label: zhCN.menu.csTickets,
+        icon: null,
+        permission: Perm.CS_READ,
+        milestone: 'M5（Week 10–11）',
+        delivered: true,
+        component: CsTicketsPage,
       },
     ],
   },

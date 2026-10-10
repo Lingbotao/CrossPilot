@@ -1,0 +1,77 @@
+{
+  "amazon": {
+    "messages": [
+      {
+        "messageId": "amz-msg-overdue",
+        "amazonOrderId": "111-0000000-0000001",
+        "buyerId": "buyer-ann",
+        "buyerName": "Ann",
+        "body": "Where is my order?",
+        "language": "en",
+        "createdDate": "2026-10-10T01:00:00Z",
+        "responseDeadline": "2026-10-10T02:00:00Z",
+        "consoleUrl": "https://sellercentral.amazon.com/messaging/inbox"
+      },
+      {
+        "messageId": "amz-msg-open",
+        "amazonOrderId": "111-0000000-0000001",
+        "buyerId": "buyer-ann",
+        "buyerName": "Ann",
+        "body": "Can you confirm the tracking number?",
+        "language": "en",
+        "createdDate": "2026-10-10T08:00:00Z",
+        "responseDeadline": "2026-10-12T08:00:00Z",
+        "consoleUrl": "https://sellercentral.amazon.com/messaging/inbox"
+      }
+    ],
+    "nextCursor": null
+  },
+  "shopee": {
+    "message_list": [
+      {
+        "message_id": "sp-msg-1",
+        "order_sn": "2601150000001",
+        "from_id": "buyer-lee",
+        "from_name": "Lee",
+        "message_content": "When will this ship?",
+        "language": "en",
+        "create_time": "2026-10-10T03:00:00Z",
+        "reply_deadline": "2026-10-10T15:00:00Z",
+        "console_url": "https://seller.shopee.sg/portal/webchat"
+      }
+    ],
+    "next_cursor": null
+  },
+  "lazada": {
+    "messages": [
+      {
+        "message_id": "lz-msg-1",
+        "order_id": "9000000000001",
+        "from_account_id": "buyer-mia",
+        "from_account_name": "Mia",
+        "content": "I want to return this.",
+        "lang": "en",
+        "send_time": "2026-10-10T04:00:00Z",
+        "sla_deadline": "2026-10-11T04:00:00Z",
+        "console_url": "https://sellercenter.lazada.com/apps/im/chat"
+      }
+    ],
+    "next_page": null
+  },
+  "tiktok": {
+    "messages": [
+      {
+        "message_id": "tt-msg-1",
+        "order_id": "576460000000000001",
+        "buyer_user_id": "buyer-kai",
+        "buyer_nickname": "Kai",
+        "content": "Is this still in stock?",
+        "language": "en",
+        "create_time": "2026-10-10T05:00:00Z",
+        "sla_deadline": "2026-10-11T05:00:00Z",
+        "console_url": "https://seller.tiktok.com/chat"
+      }
+    ],
+    "next_page_token": null
+  }
+}

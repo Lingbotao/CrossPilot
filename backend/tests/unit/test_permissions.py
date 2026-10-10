@@ -95,6 +95,7 @@ class TestRoleBehaviors:
             Perm.PURCHASE_WRITE,
             Perm.COMPLIANCE_WRITE,
             Perm.FINANCE_WRITE,
+            Perm.CS_WRITE,
         }
         assert not (ROLE_PERMISSIONS[RoleCode.VIEWER] & write_perms)
 

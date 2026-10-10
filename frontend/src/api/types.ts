@@ -90,6 +90,8 @@ export const ErrorCode = {
   BATCH_SHIP_PARTIAL_FAILED: 50003,
   ORDER_PLATFORM_REJECTED: 50005,
   RETURN_STATE_INVALID: 50006,
+  CS_TEMPLATE_DUPLICATED: 50007,
+  CS_TICKET_STATE_INVALID: 50008,
 
   // 60xxx 库存
   INVENTORY_INSUFFICIENT: 60001,
@@ -165,6 +167,8 @@ export const Perm = {
   FINANCE_WRITE: 'finance:write',
   REPORT_EXPORT: 'report:export',
   DASHBOARD_READ: 'dashboard:read',
+  CS_READ: 'cs:read',
+  CS_WRITE: 'cs:write',
   AUDIT_READ: 'audit:read',
   SYSTEM_READ: 'system:read',
   SYSTEM_WRITE: 'system:write',
@@ -2272,4 +2276,98 @@ export interface DashboardFulfillmentView {
 export interface DashboardRebuildView {
   shop_days: number;
   inventory_as_of: string;
+}
+
+export interface CsShopView {
+  id: string;
+  shop_name: string;
+  platform_code: string;
+  site_code: string;
+}
+
+export interface CsAssigneeView {
+  user_id: string;
+  display_name: string | null;
+}
+
+export interface CsOrderContext {
+  order_id: string;
+  platform_order_id: string;
+  unified_status: string;
+  buyer_name: string | null;
+  tracking_no: string | null;
+  total_amount: string;
+  currency: string;
+}
+
+export interface CsReturnLink {
+  return_id: string;
+  status: string;
+  reason: string;
+  refund_amount: string;
+  currency: string;
+  restock_status: string;
+}
+
+export interface CsMessageView {
+  id: string;
+  shop_id: string;
+  platform_code: string;
+  platform_message_id: string;
+  platform_order_id: string | null;
+  order_id: string | null;
+  buyer_id: string | null;
+  buyer_name: string | null;
+  content: string;
+  lang: string | null;
+  status: string;
+  sla_level: string;
+  sla_deadline: string;
+  received_at: string;
+  console_url: string;
+  order: CsOrderContext | null;
+}
+
+export interface CsTemplateView {
+  id: string;
+  scene: string;
+  lang: string;
+  name: string;
+  body: string;
+}
+
+export interface CsTemplatePreview {
+  text: string;
+  missing: string[];
+}
+
+export interface CsTicketNoteView {
+  id: string;
+  body: string;
+  author_name: string | null;
+  created_at: string;
+}
+
+export interface CsTicketView {
+  id: string;
+  shop_id: string;
+  message_id: string | null;
+  order_id: string | null;
+  return_order_id: string | null;
+  buyer_id: string | null;
+  buyer_name: string | null;
+  ticket_type: string;
+  status: string;
+  assignee_user_id: string | null;
+  title: string;
+  resolution: string | null;
+  order: CsOrderContext | null;
+  return_order: CsReturnLink | null;
+  notes: CsTicketNoteView[];
+}
+
+export interface CsSyncView {
+  task_id: string;
+  shop_id: string;
+  messages: number;
 }

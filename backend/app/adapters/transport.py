@@ -70,6 +70,12 @@ class FixtureTransport:
             return 200, {"accepted": True, "tracking_no": str(body.get("tracking_no") or "")}
         if url.endswith("/update_address") or url.endswith("/update_note"):
             return 200, {"accepted": True}
+        if "/messages" in url or "/sellerchat/" in url or "/im/message/" in url or "/customer_service/" in url:
+            page = load_json_fixture("messages.json")
+            raw = page.get(platform)
+            if not isinstance(raw, dict):
+                raise AdapterError(f"{platform} 缺少客服 fixture", platform=platform)
+            return 200, raw
         if "/ads" in url:
             page = load_json_fixture("ads.json")
             raw = page.get(platform)

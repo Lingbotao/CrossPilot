@@ -10,7 +10,7 @@ import base64
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import computed_field, field_validator
+from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_JWT_SECRET = "change-me-to-a-64-char-random-string"
@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     dashboard_max_days: int = 366
     dashboard_stale_days: int = 90
     dashboard_rank_limit: int = 20
+    # 客服消息。5 分钟同步；剩余不足预警小时数标黄。平台若没给截止时间，用默认响应小时。
+    cs_sync_seconds: int = 300
+    cs_sync_max_pages: int = 5
+    cs_sla_warn_hours: int = 2
+    cs_sla_default_hours: int = 24
+    cs_sla_hours_by_platform: dict[str, int] = Field(default_factory=dict)
     # Webhook（PRD 10.5）：单平台每秒 100 次、事件 ID 保留 24 小时。空 CIDR 表示平台还没给来源网段。
     webhook_qps: int = 100
     webhook_event_ttl_seconds: int = 86400

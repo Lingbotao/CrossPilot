@@ -26,6 +26,7 @@ from app.models.compliance import (
     TaxRegistration,
 )
 from app.models.config import PlatformRateLimit, PlatformStatusMapping
+from app.models.cs import CsMessage, CsTemplate, CsTicket, CsTicketNote
 from app.models.dashboard import DashboardInventoryDaily, DashboardShopDaily
 from app.models.enums import (
     AuditAction,
@@ -169,6 +170,10 @@ __all__ = [
     "AdKeywordMetric",
     "DashboardShopDaily",
     "DashboardInventoryDaily",
+    "CsMessage",
+    "CsTemplate",
+    "CsTicket",
+    "CsTicketNote",
     # 枚举
     "TenantPlan",
     "TenantStatus",

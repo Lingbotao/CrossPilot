@@ -2107,6 +2107,86 @@ class TestDashboardIsolation:
             assert _run(_visible(table, row_a, row_b, TENANT_B)) == {row_b}
 
 
+class TestCsIsolation:
+    def test_tenant_cannot_read_another_tenants_cs(self, migrated: None) -> None:
+        base = 974000000000000000 + time.time_ns() % 10**12
+        shop_a, shop_b = base, base + 1
+        message_a, message_b = base + 2, base + 3
+        template_a, template_b = base + 4, base + 5
+        ticket_a, ticket_b = base + 6, base + 7
+        note_a, note_b = base + 8, base + 9
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO shop (id, tenant_id, platform_code, site_code, shop_name, "
+                            "platform_shop_id, status) VALUES (:id, :tid, 'amazon', 'US', '客服店', :shop, 1)"
+                        ),
+                        {"id": shop_id, "tid": tenant_id, "shop": f"cs-{shop_id}"},
+                    )
+                for message_id, tenant_id, shop_id in (
+                    (message_a, TENANT_A, shop_a),
+                    (message_b, TENANT_B, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO cs_message (id, tenant_id, shop_id, platform_code, platform_message_id, "
+                            "content, status, sla_deadline, received_at, console_url) VALUES "
+                            "(:id, :tid, :shop, 'amazon', :mid, 'hello', 'UNREAD', "
+                            "'2026-10-10T02:00:00Z', '2026-10-10T01:00:00Z', 'https://sellercentral.amazon.com/messaging')"
+                        ),
+                        {"id": message_id, "tid": tenant_id, "shop": shop_id, "mid": f"m-{message_id}"},
+                    )
+                for template_id, tenant_id in ((template_a, TENANT_A), (template_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO cs_template (id, tenant_id, scene, lang, name, body) "
+                            "VALUES (:id, :tid, 'SHIPPING', 'en', 'ship', 'order {{order_no}}')"
+                        ),
+                        {"id": template_id, "tid": tenant_id},
+                    )
+                for ticket_id, tenant_id, shop_id in (
+                    (ticket_a, TENANT_A, shop_a),
+                    (ticket_b, TENANT_B, shop_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO cs_ticket (id, tenant_id, shop_id, ticket_type, status, title) "
+                            "VALUES (:id, :tid, :shop, 'INQUIRY', 'OPEN', 'ask')"
+                        ),
+                        {"id": ticket_id, "tid": tenant_id, "shop": shop_id},
+                    )
+                for note_id, tenant_id, ticket_id in (
+                    (note_a, TENANT_A, ticket_a),
+                    (note_b, TENANT_B, ticket_b),
+                ):
+                    await session.execute(
+                        text(
+                            "INSERT INTO cs_ticket_note (id, tenant_id, ticket_id, body) "
+                            "VALUES (:id, :tid, :ticket, 'called')"
+                        ),
+                        {"id": note_id, "tid": tenant_id, "ticket": ticket_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        for table, row_a, row_b in (
+            ("cs_message", message_a, message_b),
+            ("cs_template", template_a, template_b),
+            ("cs_ticket", ticket_a, ticket_b),
+            ("cs_ticket_note", note_a, note_b),
+        ):
+            assert _run(_visible(table, row_a, row_b, TENANT_A)) == {row_a}
+            assert _run(_visible(table, row_a, row_b, TENANT_B)) == {row_b}
+        with pytest.raises(Exception):  # noqa: B017 - 应用角色没有 DELETE
+            _run(_delete("cs_message", message_a))
+
+
 async def _visible(table: str, row_a: int, row_b: int, tenant_id: int) -> set[int]:
     engine, factory = _app_session()
     async with factory() as session:
