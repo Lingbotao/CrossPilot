@@ -152,6 +152,7 @@ class PlatformRollup:
     gmv: Decimal
     book_gmv: Decimal | None
     net_profit: Decimal | None
+    book_net_profit: Decimal | None
     profit_complete: bool
     on_time: int
     late: int
@@ -163,9 +164,12 @@ class DayRollup:
     stat_date: date
     platform_code: str
     currency: str
+    book_currency: str
     order_count: int
     gmv: Decimal
+    book_gmv: Decimal | None
     net_profit: Decimal | None
+    book_net_profit: Decimal | None
     profit_complete: bool
 
 
@@ -221,6 +225,7 @@ class SkuRank:
     net_margin: Decimal | None
     loss: bool
     complete: bool
+    book_revenue: Decimal | None = None
 
 
 def shift_year(day: date) -> date:
@@ -496,6 +501,7 @@ def _platform_rollups(rows: list[ShopDay]) -> list[PlatformRollup]:
                 gmv=quantize(sum((item.gmv for item in group), Decimal("0"))),
                 book_gmv=_sum_optional([item.book_gmv for item in group]) if complete else None,
                 net_profit=_sum_optional([item.net_profit for item in group]) if complete else None,
+                book_net_profit=_sum_optional([item.book_net_profit for item in group]) if complete else None,
                 profit_complete=complete,
                 on_time=sum(item.on_time for item in group),
                 late=sum(item.late for item in group),
@@ -517,9 +523,12 @@ def _day_rollups(rows: list[ShopDay]) -> list[DayRollup]:
                 stat_date=stat_date,
                 platform_code=platform_code,
                 currency=currency,
+                book_currency=group[0].book_currency,
                 order_count=sum(item.order_count for item in group),
                 gmv=quantize(sum((item.gmv for item in group), Decimal("0"))),
+                book_gmv=_sum_optional([item.book_gmv for item in group]) if complete else None,
                 net_profit=_sum_optional([item.net_profit for item in group]) if complete else None,
+                book_net_profit=_sum_optional([item.book_net_profit for item in group]) if complete else None,
                 profit_complete=complete,
             )
         )

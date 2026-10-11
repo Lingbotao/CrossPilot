@@ -40,10 +40,10 @@ export function AnalyticsInventoryPage() {
       {view.isError ? <Alert type="error" message={view.error instanceof ApiError ? view.error.message : copy.requestFailed} /> : null}
       {!data?.as_of ? <Alert type="info" message={copy.inventoryEmpty} /> : <Typography.Text type="secondary">{copy.asOf} {data.as_of}</Typography.Text>}
       <Row gutter={[16, 16]}>
-        <Col xs={24} md={8}><Card><Statistic title={copy.onHand} value={data?.on_hand_qty ?? 0} /></Card></Col>
-        <Col xs={24} md={8}><Card><Statistic title={copy.stockout} value={data?.stockout_sku_count ?? 0} /></Card></Col>
-        <Col xs={24} md={8}><Card><Statistic title={copy.belowSafe} value={data?.below_safe_sku_count ?? 0} /></Card></Col>
-        <Col xs={24} md={8}><Card><Statistic title={copy.stale} value={data?.stale_sku_count ?? 0} /></Card></Col>
+        <Col xs={24} md={8}><Card><Statistic title={<Link to="/inventory">{copy.onHand}</Link>} value={data?.on_hand_qty ?? 0} /></Card></Col>
+        <Col xs={24} md={8}><Card><Statistic title={<Link to="/inventory/replenishment">{copy.stockout}</Link>} value={data?.stockout_sku_count ?? 0} /></Card></Col>
+        <Col xs={24} md={8}><Card><Statistic title={<Link to="/inventory/replenishment">{copy.belowSafe}</Link>} value={data?.below_safe_sku_count ?? 0} /></Card></Col>
+        <Col xs={24} md={8}><Card><Statistic title={<Link to="/inventory/replenishment">{copy.stale}</Link>} value={data?.stale_sku_count ?? 0} /></Card></Col>
         <Col xs={24} md={8}><Card><Statistic title={copy.turnover} value={data?.turnover_days ?? '—'} /></Card></Col>
       </Row>
       <Typography.Paragraph type="secondary">{data?.turnover_formula}</Typography.Paragraph>

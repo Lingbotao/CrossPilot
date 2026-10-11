@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Card, Space, Table, Typography } from 'antd';
+import { Link } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { dashboardApi } from '@/api/dashboard';
@@ -44,9 +45,17 @@ export function AnalyticsFulfillmentPage() {
           { title: copy.site, dataIndex: 'site_code' },
           { title: copy.orders, dataIndex: 'order_count' },
           { title: copy.onTime, dataIndex: 'on_time' },
-          { title: copy.late, dataIndex: 'late' },
+          {
+            title: copy.late,
+            dataIndex: 'late',
+            render: (value: number) => <Link to="/orders/exceptions">{value}</Link>,
+          },
+          {
+            title: copy.returns,
+            dataIndex: 'return_count',
+            render: (value: number) => <Link to="/orders/returns">{value}</Link>,
+          },
           { title: copy.onTimeRate, dataIndex: 'on_time_rate', render: (value: string | null) => percentLabel(value) },
-          { title: copy.returns, dataIndex: 'return_count' },
           { title: copy.returnRate, dataIndex: 'return_rate', render: (value: string | null) => percentLabel(value) },
         ]}
       />

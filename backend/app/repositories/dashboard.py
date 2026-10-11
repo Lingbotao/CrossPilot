@@ -247,6 +247,7 @@ class DashboardRepository:
                 func.sum(SkuProfitDaily.net_profit),
                 func.sum(SkuProfitDaily.book_net_profit),
                 func.bool_and(SkuProfitDaily.complete),
+                func.sum(SkuProfitDaily.book_revenue),
             )
             .join(Sku, Sku.id == SkuProfitDaily.sku_id)
             .join(Shop, Shop.id == SkuProfitDaily.shop_id)

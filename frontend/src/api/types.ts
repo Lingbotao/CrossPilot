@@ -2165,9 +2165,12 @@ export interface DashboardDayView {
   stat_date: string;
   platform_code: string;
   currency: string;
+  book_currency: string;
   order_count: number;
   gmv: string;
+  book_gmv: string | null;
   net_profit: string | null;
+  book_net_profit: string | null;
 }
 
 export interface DashboardPromoView {
@@ -2195,6 +2198,7 @@ export interface DashboardPlatformView {
   gmv: string;
   book_gmv: string | null;
   net_profit: string | null;
+  book_net_profit: string | null;
   on_time_rate: string | null;
   return_rate: string | null;
 }
@@ -2212,6 +2216,7 @@ export interface DashboardSkuRankView {
   book_currency: string;
   quantity: number;
   revenue: string;
+  book_revenue: string | null;
   net_profit: string | null;
   book_net_profit: string | null;
   net_margin: string | null;

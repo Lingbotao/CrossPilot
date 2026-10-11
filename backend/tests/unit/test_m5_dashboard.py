@@ -122,6 +122,9 @@ def test_assemble_keeps_gmv_when_profit_is_incomplete() -> None:
     summary = summarize(rows)
     assert summary.currencies[0].acos == Decimal("0.200000")
     assert summary.currencies[0].net_margin is None
+    assert summary.platforms[0].book_net_profit is None
+    assert summary.days[0].book_currency == "CNY"
+    assert summary.days[0].book_gmv is None
 
 
 def test_inventory_marks_stockout_and_hides_partial_stale_amount() -> None:

@@ -20,6 +20,16 @@ function messageOf(error: unknown): string {
   return error instanceof ApiError ? error.message : copy.requestFailed;
 }
 
+function remainingLabel(deadline: string): string {
+  const remaining = new Date(deadline).getTime() - Date.now();
+  if (Number.isNaN(remaining) || remaining <= 0) {
+    return copy.overdue;
+  }
+  const hours = Math.floor(remaining / 3_600_000);
+  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
+  return `${copy.remaining} ${hours}小时${minutes}分`;
+}
+
 export function CsMessagesPage() {
   const client = useQueryClient();
   const [shopId, setShopId] = useState<string>();
@@ -129,7 +139,12 @@ export function CsMessagesPage() {
           {
             title: copy.slaTitle,
             dataIndex: 'sla_level',
-            render: (value: string) => <Tag color={SLA_COLOR[value]}>{label(copy.sla, value)}</Tag>,
+            render: (value: string, row) => (
+              <Space size={4}>
+                <Tag color={SLA_COLOR[value]}>{label(copy.sla, value)}</Tag>
+                <Typography.Text type={value === 'OVERDUE' ? 'danger' : 'secondary'}>{remainingLabel(row.sla_deadline)}</Typography.Text>
+              </Space>
+            ),
           },
           {
             title: copy.status,
@@ -153,7 +168,7 @@ export function CsMessagesPage() {
             <Tag color={SLA_COLOR[current.sla_level]}>{label(copy.sla, current.sla_level)}</Tag>
             <Typography.Paragraph>{current.content}</Typography.Paragraph>
             <Typography.Text type="secondary">
-              {copy.deadline} {current.sla_deadline}
+              {copy.deadline} {current.sla_deadline} · {remainingLabel(current.sla_deadline)}
             </Typography.Text>
             {current.order ? (
               <Card size="small" title={copy.orderContext}>

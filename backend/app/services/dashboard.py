@@ -234,10 +234,11 @@ class DashboardService:
                     revenue=revenue,
                     net_profit=net,
                     book_net_profit=book,
-                    net_margin=None if net is None else ratio(net, revenue),
-                    loss=bool(net is not None and net < 0),
-                    complete=complete and net is not None,
-                )
+            net_margin=None if net is None else ratio(net, revenue),
+            loss=bool(net is not None and net < 0),
+            complete=complete and net is not None,
+            book_revenue=None if row[10] is None or not complete else Decimal(row[10]),
+        )
             )
         top, bottom, loss = rank_skus(ranks, limit=settings.dashboard_rank_limit)
         return SkuRankingView(
@@ -392,7 +393,10 @@ def _day_point(item: DayRollup, visible: bool) -> DayPointView:
         currency=item.currency,
         order_count=item.order_count,
         gmv=money_text(item.gmv),
+        book_gmv=_shown(item.book_gmv, visible=True),
         net_profit=_shown(item.net_profit, visible=visible),
+        book_net_profit=_shown(item.book_net_profit, visible=visible),
+        book_currency=item.book_currency,
     )
 
 
@@ -406,6 +410,7 @@ def _platform_view(item: PlatformRollup, visible: bool) -> PlatformCompareView:
         gmv=money_text(item.gmv),
         book_gmv=_shown(item.book_gmv, visible=True),
         net_profit=_shown(item.net_profit, visible=visible),
+        book_net_profit=_shown(item.book_net_profit, visible=visible),
         on_time_rate=_percent(fulfillment_rate(item.on_time, item.late)),
         return_rate=_percent(return_rate(item.return_count, item.order_count)),
     )
@@ -420,6 +425,7 @@ def _rank_view(item: SkuRank) -> SkuRankView:
         book_currency=item.book_currency,
         quantity=item.quantity,
         revenue=money_text(item.revenue),
+        book_revenue=None if item.book_revenue is None else money_text(item.book_revenue),
         net_profit=None if item.net_profit is None else money_text(item.net_profit),
         book_net_profit=None if item.book_net_profit is None else money_text(item.book_net_profit),
         net_margin=percent_text(item.net_margin),

@@ -109,7 +109,7 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     icon: <BarChartOutlined />,
     permission: Perm.DASHBOARD_READ,
     milestone: 'M5（Week 10–11）',
-    delivered: false,
+    delivered: true,
     children: [
       {
         key: 'analytics-overview',
@@ -586,7 +586,7 @@ export const MENU_ITEMS: readonly MenuItemConfig[] = [
     icon: <CustomerServiceOutlined />,
     permission: Perm.CS_READ,
     milestone: 'M5（Week 10–11）',
-    delivered: false,
+    delivered: true,
     children: [
       {
         key: 'cs-messages',

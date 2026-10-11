@@ -43,9 +43,12 @@ class DayPointView(BaseModel):
     stat_date: date
     platform_code: str
     currency: str
+    book_currency: str
     order_count: int
     gmv: str
+    book_gmv: str | None = None
     net_profit: str | None = None
+    book_net_profit: str | None = None
 
 
 class PromoView(BaseModel):
@@ -78,6 +81,7 @@ class PlatformCompareView(BaseModel):
     gmv: str
     book_gmv: str | None = None
     net_profit: str | None = None
+    book_net_profit: str | None = None
     on_time_rate: str | None = None
     return_rate: str | None = None
 
@@ -90,6 +94,7 @@ class SkuRankView(BaseModel):
     book_currency: str
     quantity: int
     revenue: str
+    book_revenue: str | None = None
     net_profit: str | None = None
     book_net_profit: str | None = None
     net_margin: str | None = None
