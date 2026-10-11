@@ -83,6 +83,7 @@ from app.models.purchase import (
     SkuSupplier,
     Supplier,
 )
+from app.models.report import ReportExport
 from app.models.tenant import MemberInvitation, Role, SysUser, Tenant, TenantUser, UserDataScope
 
 __all__ = [
@@ -174,6 +175,7 @@ __all__ = [
     "CsTemplate",
     "CsTicket",
     "CsTicketNote",
+    "ReportExport",
     # 枚举
     "TenantPlan",
     "TenantStatus",

@@ -10,7 +10,7 @@
 | 40xxx | 商品        | 40001 SKU 编码重复，40007 批次超过 500，40009 导入行错误 |
 | 50xxx | 订单        | 50001 订单不存在，50002 状态不允许该操作          |
 | 60xxx | 库存        | 60001 库存不足，60002 库存同步失败，60008 采购状态不允许，60009 收货数量不合法 |
-| 70xxx | 财务        | 70001 汇率缺失，70002 对账不平，70008 到仓成本配置不完整 |
+| 70xxx | 财务        | 70001 汇率缺失，70002 对账不平，70008 到仓成本配置不完整，70009 导出条件不合法 |
 | 80xxx | 合规        | 80001 缺失 HS 编码，80004 税率区间重叠，80006 认证附件不合法 |
 """
 
@@ -105,6 +105,7 @@ class ErrorCode(IntEnum):
     EXCHANGE_RATE_OVERLAP = 70006
     SETTLEMENT_FILE_INVALID = 70007
     COST_POOL_INCOMPLETE = 70008
+    REPORT_EXPORT_INVALID = 70009
 
     # ---- 80xxx 合规 ----
     HS_CODE_MISSING = 80001
@@ -185,6 +186,7 @@ _DEFAULT_HTTP_STATUS: dict[int, int] = {
     ErrorCode.EXCHANGE_RATE_OVERLAP: 409,
     ErrorCode.SETTLEMENT_FILE_INVALID: 400,
     ErrorCode.COST_POOL_INCOMPLETE: 422,
+    ErrorCode.REPORT_EXPORT_INVALID: 422,
     ErrorCode.HS_CODE_MISSING: 422,
     ErrorCode.CERTIFICATE_EXPIRED: 409,
     ErrorCode.MARKET_RESTRICTED: 403,
@@ -334,6 +336,11 @@ class CostPoolIncompleteError(AppError):
     message = "到仓成本配置不完整，不能回写"
 
 
+class ReportExportInvalidError(AppError):
+    code = ErrorCode.REPORT_EXPORT_INVALID
+    message = "导出条件不合法"
+
+
 class ExchangeRateMissingError(AppError):
     code = ErrorCode.EXCHANGE_RATE_MISSING
     message = "汇率缺失"
@@ -391,6 +398,7 @@ __all__ = [
     "CostPoolIncompleteError",
     "PurchaseStateError",
     "ReceiptInvalidError",
+    "ReportExportInvalidError",
     "StockTakingStateError",
     "SupplierDefaultError",
     "TransferStateError",

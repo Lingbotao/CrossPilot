@@ -1705,6 +1705,10 @@ class TestComplianceConfigIsolation:
             "landed_cost_line_toggle",
             "id, tenant_id, market, channel, line_code, enabled",
             "(:id, :tid, 'US', 'AIR', 'ADS', false)",
+            cleanup=(
+                "DELETE FROM landed_cost_line_toggle "
+                "WHERE tenant_id IN (:a, :b) AND market = 'US' AND channel = 'AIR' AND line_code = 'ADS'"
+            ),
         )
 
     def test_tenant_cannot_read_another_tenants_exchange_rate(self, migrated: None) -> None:
@@ -1712,6 +1716,11 @@ class TestComplianceConfigIsolation:
             "exchange_rate",
             "id, tenant_id, base_currency, quote_currency, rate, basis, effective_on, source",
             "(:id, :tid, 'USD', 'CNY', 7.200000, 'ORDER', DATE '2026-10-01', 'manual source')",
+            cleanup=(
+                "DELETE FROM exchange_rate WHERE tenant_id IN (:a, :b) "
+                "AND base_currency = 'USD' AND quote_currency = 'CNY' "
+                "AND basis = 'ORDER' AND effective_on = DATE '2026-10-01'"
+            ),
         )
 
     def test_tenant_cannot_read_another_tenants_sku_profit_daily(self, migrated: None) -> None:
@@ -1956,7 +1965,7 @@ class TestPurchaseIsolation:
                 _run(_delete(table, left))
 
 
-def _assert_hidden(table: str, columns: str, values: str) -> None:
+def _assert_hidden(table: str, columns: str, values: str, cleanup: str | None = None) -> None:
     base = 972000000000000000 + time.time_ns() % 10**12
     row_a, row_b = base, base + 1
 
@@ -1964,6 +1973,8 @@ def _assert_hidden(table: str, columns: str, values: str) -> None:
         engine = create_async_engine(settings.database_migration_url, poolclass=None)
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
+            if cleanup is not None:
+                await session.execute(text(cleanup), {"a": TENANT_A, "b": TENANT_B})
             for row_id, tenant_id in ((row_a, TENANT_A), (row_b, TENANT_B)):
                 await session.execute(
                     text(f"INSERT INTO {table} ({columns}) VALUES {values}"),
@@ -2068,6 +2079,13 @@ class TestDashboardIsolation:
             engine = create_async_engine(settings.database_migration_url, poolclass=None)
             factory = async_sessionmaker(engine, expire_on_commit=False)
             async with factory() as session:
+                await session.execute(
+                    text(
+                        "DELETE FROM dashboard_inventory_daily "
+                        "WHERE tenant_id IN (:a, :b) AND stat_date = DATE '2026-10-09'"
+                    ),
+                    {"a": TENANT_A, "b": TENANT_B},
+                )
                 for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
                     await session.execute(
                         text(
@@ -2120,6 +2138,13 @@ class TestCsIsolation:
             engine = create_async_engine(settings.database_migration_url, poolclass=None)
             factory = async_sessionmaker(engine, expire_on_commit=False)
             async with factory() as session:
+                await session.execute(
+                    text(
+                        "DELETE FROM cs_template WHERE tenant_id IN (:a, :b) "
+                        "AND scene = 'SHIPPING' AND lang = 'en' AND name = 'ship'"
+                    ),
+                    {"a": TENANT_A, "b": TENANT_B},
+                )
                 for shop_id, tenant_id in ((shop_a, TENANT_A), (shop_b, TENANT_B)):
                     await session.execute(
                         text(
@@ -2185,6 +2210,35 @@ class TestCsIsolation:
             assert _run(_visible(table, row_a, row_b, TENANT_B)) == {row_b}
         with pytest.raises(Exception):  # noqa: B017 - 应用角色没有 DELETE
             _run(_delete("cs_message", message_a))
+
+
+class TestReportExportIsolation:
+    def test_tenant_cannot_read_another_tenants_export(self, migrated: None) -> None:
+        base = 975000000000000000 + time.time_ns() % 10**12
+        export_a, export_b = base, base + 1
+
+        async def _seed() -> None:
+            engine = create_async_engine(settings.database_migration_url, poolclass=None)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as session:
+                for row_id, tenant_id in ((export_a, TENANT_A), (export_b, TENANT_B)):
+                    await session.execute(
+                        text(
+                            "INSERT INTO report_export (id, tenant_id, dataset, file_format, status, "
+                            "date_from, date_to, include_cost, expires_at) VALUES "
+                            "(:id, :tid, 'sku_profit', 'csv', 'SUCCEEDED', '2026-10-01', '2026-10-07', false, "
+                            "'2026-10-11T00:00:00Z')"
+                        ),
+                        {"id": row_id, "tid": tenant_id},
+                    )
+                await session.commit()
+            await engine.dispose()
+
+        _run(_seed())
+        assert _run(_visible("report_export", export_a, export_b, TENANT_A)) == {export_a}
+        assert _run(_visible("report_export", export_a, export_b, TENANT_B)) == {export_b}
+        with pytest.raises(Exception):  # noqa: B017 - 应用角色没有 DELETE
+            _run(_delete("report_export", export_a))
 
 
 async def _visible(table: str, row_a: int, row_b: int, tenant_id: int) -> set[int]:

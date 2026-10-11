@@ -5,7 +5,7 @@
     批次 2（M2）    ``/orders/*`` ``/webhooks/{platform}``
     批次 3（M3）    ``/spus/*`` ``/listings/*`` ``/inventories/*`` ``/warehouses``
     批次 4（M4）    ``/hs-codes/search`` ``/tax-rules`` ``/certificates`` ``/landed-cost/*`` ``/profit/*``
-    批次 5（M5）    ``/suppliers/*`` ``/purchase-orders/*`` ``/ads/*`` ``/cs/*`` ``/dashboard/*``
+    批次 5（M5）    ``/suppliers/*`` ``/purchase-orders/*`` ``/ads/*`` ``/cs/*`` ``/dashboard/*`` ``/reports/export``
     批次 6（M6）    开放 API / 出站 Webhook —— **已暂缓至上线前**（规划 §1.4 A 类）
 """
 
@@ -30,6 +30,7 @@ from app.api.v1 import (
     profit,
     purchase,
     rate_limits,
+    reports,
     roles,
     shops,
     sync_tasks,
@@ -63,6 +64,7 @@ api_router.include_router(purchase.shipments)
 api_router.include_router(ads.router)
 api_router.include_router(cs.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(reports.router)
 api_router.include_router(webhooks.router)
 
 __all__ = ["api_router"]

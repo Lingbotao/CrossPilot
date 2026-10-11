@@ -114,6 +114,7 @@ export const ErrorCode = {
   EXCHANGE_RATE_OVERLAP: 70006,
   SETTLEMENT_FILE_INVALID: 70007,
   COST_POOL_INCOMPLETE: 70008,
+  REPORT_EXPORT_INVALID: 70009,
 
   // 80xxx 合规
   HS_CODE_MISSING: 80001,
@@ -2370,4 +2371,24 @@ export interface CsSyncView {
   task_id: string;
   shop_id: string;
   messages: number;
+}
+
+export interface ReportExportCreate {
+  dataset: 'sku_profit';
+  file_format: 'csv' | 'xlsx';
+  date_from: string;
+  date_to: string;
+}
+
+export interface ReportExportView {
+  id: string;
+  dataset: string;
+  file_format: 'csv' | 'xlsx';
+  status: 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'EXPIRED';
+  date_from: string;
+  date_to: string;
+  include_cost: boolean;
+  row_count: number | null;
+  error: string | null;
+  expires_at: string;
 }

@@ -117,6 +117,11 @@ celery_app.conf.beat_schedule = {
         "task": "cs.scan_messages",
         "schedule": timedelta(seconds=settings.cs_sync_seconds),
     },
+    # 导出文件保留期过后删除。02:00 UTC。
+    "beat-expire-exports": {
+        "task": "report.expire_exports",
+        "schedule": crontab(hour=2, minute=0),
+    },
 }
 
 

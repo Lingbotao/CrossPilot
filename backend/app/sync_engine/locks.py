@@ -29,6 +29,7 @@ BEAT_SCAN_LISTING_DIFFS = "beat:scan_listing_diffs"
 BEAT_SCAN_ADS = "beat:scan_ads"
 BEAT_SCAN_DASHBOARD = "beat:scan_dashboard"
 BEAT_SCAN_CS = "beat:scan_cs"
+BEAT_EXPIRE_EXPORTS = "beat:expire_exports"
 
 
 class LockStatus(StrEnum):

@@ -131,6 +131,11 @@ class Settings(BaseSettings):
     # 订单工作台（F4-02/05/11）。批量与导出上限走配置，业务代码不写死 200。
     order_batch_ship_limit: int = 200
     order_export_max_rows: int = 5000
+    # 看板明细导出（F10-10）。行数、保留时间和区间都走配置，业务代码不写死 5 万或 24 小时。
+    report_export_max_rows: int = 50000
+    report_export_ttl_hours: int = 24
+    report_export_max_span_days: int = 366
+    report_export_page_size: int = 1000
     order_tracking_prefix: str = "CP"
     # 待发货 SLA 与超时预警提前量（F4-08）。改配置即可，业务代码不写死小时数。
     order_ship_sla_hours: int = 48
