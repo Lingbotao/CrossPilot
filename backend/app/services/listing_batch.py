@@ -254,6 +254,7 @@ class ListingBatchService:
                 apply_counts(batch, items, running=False)
                 await self._commit()
                 return _view(batch, items)
+            item_id = pending.id
             batch.status = "RUNNING"
             try:
                 await worker(batch, pending)
@@ -261,7 +262,7 @@ class ListingBatchService:
                 await self._commit()
             except Exception as exc:
                 await self._rollback()
-                await self._mark_failed(batch_id, pending.id, exc)
+                await self._mark_failed(batch_id, item_id, exc)
 
     async def _mark_failed(self, batch_id: int, item_id: int, exc: Exception) -> None:
         batch = await self.batches.get_or_404(batch_id)
